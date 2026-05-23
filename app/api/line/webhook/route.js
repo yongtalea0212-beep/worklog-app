@@ -16,7 +16,12 @@ const ANTHROPIC_KEY      = process.env.ANTHROPIC_API_KEY || ''
 // HELPERS
 // ─────────────────────────────────────────
 function verifySignature(body, signature) {
-  return true // skip verification for now
+  if (!LINE_CHANNEL_SECRET) return true // skip in dev
+  const hash = crypto
+    .createHmac('SHA256', LINE_CHANNEL_SECRET)
+    .update(body)
+    .digest('base64')
+  return hash === signature
 }
 
 async function replyLINE(replyToken, messages) {

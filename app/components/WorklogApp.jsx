@@ -1508,53 +1508,185 @@ function DashboardPage({logs,onAdd,onReport}){
 // ─────────────────────────────────────────
 // LOGS PAGE
 // ─────────────────────────────────────────
-function LogsPage({logs,onEdit,onDelete,onAdd}){
-  const [filter,setFilter]=useState("all")
-  const filtered=filter==="all"?logs:logs.filter(l=>l.category===filter)
+// ── Status config ──────────────────────────────────
+const STATUS_CFG = {
+  done:        { label:"เสร็จแล้ว", emoji:"✅", color:"#10B981", bg:"rgba(16,185,129,0.10)", border:"rgba(16,185,129,0.28)", dot:"#10B981" },
+  in_progress: { label:"กำลังทำ",   emoji:"🔄", color:"#F59E0B", bg:"rgba(245,158,11,0.10)", border:"rgba(245,158,11,0.28)", dot:"#F59E0B" },
+  draft:       { label:"ร่าง",       emoji:"📝", color:"#6C63FF", bg:"rgba(108,99,255,0.10)", border:"rgba(108,99,255,0.22)", dot:"#6C63FF" },
+}
+function StatusBadge({status, size="sm"}){
+  const s = STATUS_CFG[status] || STATUS_CFG.draft
+  const fs = size==="sm" ? 10 : 12
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center", gap:4,
+      background:s.bg, border:"1px solid "+s.border, color:s.color,
+      fontSize:fs, fontWeight:700, padding: size==="sm" ? "2px 8px" : "4px 12px",
+      borderRadius:20, letterSpacing:.2, whiteSpace:"nowrap",
+    }}>
+      <span style={{width:5,height:5,borderRadius:"50%",background:s.dot,flexShrink:0,
+        boxShadow: status==="in_progress" ? "0 0 0 2px "+s.dot+"40" : "none"}}/>
+      {s.emoji} {s.label}
+    </span>
+  )
+}
+
+function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
+  const [catFilter, setCatFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<=768)
+    check(); window.addEventListener("resize",check)
+    return()=>window.removeEventListener("resize",check)
+  },[])
+
+  const filtered = logs.filter(l=>{
+    if(catFilter!=="all" && l.category!==catFilter) return false
+    if(statusFilter!=="all" && l.status!==statusFilter) return false
+    return true
+  })
+
   const groups={}
   filtered.forEach(l=>{ if(!groups[l.date])groups[l.date]=[]; groups[l.date].push(l) })
   const sorted=Object.entries(groups).sort((a,b)=>b[0].localeCompare(a[0]))
 
+  const countByStatus = { all:logs.length, done:0, in_progress:0, draft:0 }
+  logs.forEach(l=>{ if(countByStatus[l.status]!==undefined) countByStatus[l.status]++ })
+
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div><div style={{fontSize:20,fontWeight:700,color:"var(--text)"}}>รายการงาน</div><div style={{fontSize:12,color:"var(--text3)"}}>ทั้งหมด {logs.length} งาน</div></div>
-        <button onClick={onAdd} className="btn btn-primary">+ เพิ่มงาน</button>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:"var(--text)"}}>รายการงาน</div>
+          <div style={{fontSize:12,color:"var(--text3)"}}>ทั้งหมด {logs.length} งาน</div>
+        </div>
+        <button onClick={onAdd} className="btn btn-primary btn-sm">+ เพิ่มงาน</button>
       </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
-        <button className={`pill ${filter==="all"?"on":""}`} onClick={()=>setFilter("all")}>ทั้งหมด ({logs.length})</button>
-        {CATS.map(c=><button key={c.id} className={`pill ${filter===c.id?"on":""}`} onClick={()=>setFilter(c.id)}>{c.icon} {c.label}</button>)}
+
+      {/* Status filter tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:12,background:"rgba(255,255,255,0.5)",padding:"6px",borderRadius:14,border:"1px solid rgba(255,255,255,0.85)",width:"fit-content",flexWrap:"wrap"}}>
+        {[
+          {k:"all",   label:"ทั้งหมด", emoji:"📋"},
+          {k:"done",        ...STATUS_CFG.done},
+          {k:"in_progress", ...STATUS_CFG.in_progress},
+          {k:"draft",       ...STATUS_CFG.draft},
+        ].map(s=>(
+          <button key={s.k} onClick={()=>setStatusFilter(s.k)} style={{
+            display:"flex", alignItems:"center", gap:5,
+            padding:"6px 12px", borderRadius:10, border:"none",
+            fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"var(--font)",
+            transition:"all .15s",
+            background: statusFilter===s.k ? (s.bg||"rgba(108,99,255,0.11)") : "transparent",
+            color: statusFilter===s.k ? (s.color||"var(--accent)") : "var(--text3)",
+            boxShadow: statusFilter===s.k ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+          }}>
+            {s.emoji} {s.label}
+            <span style={{background:"rgba(0,0,0,0.07)",borderRadius:10,padding:"1px 6px",fontSize:10,fontWeight:700}}>
+              {countByStatus[s.k]}
+            </span>
+          </button>
+        ))}
       </div>
-      {sorted.length===0?<div className="empty"><div className="empty-icon">📋</div><div>ยังไม่มีงาน</div></div>:
-        sorted.map(([date,dayLogs])=>(
-          <div key={date} style={{marginBottom:18}}>
-            <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",marginBottom:8,letterSpacing:.5}}>
-              {fmtDate(date).toUpperCase()} · {dayLogs.length} งาน · {dayLogs.reduce((s,l)=>s+l.hours,0)} ชม.
+
+      {/* Category filter pills */}
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18,overflowX:"auto"}}>
+        <button className={`pill ${catFilter==="all"?"on":""}`} onClick={()=>setCatFilter("all")}>ทั้งหมด</button>
+        {CATS.map(c=><button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>)}
+      </div>
+
+      {sorted.length===0
+        ? <div className="empty"><div style={{fontSize:40,marginBottom:12}}>📋</div><div>ไม่พบงานที่ตรงเงื่อนไข</div></div>
+        : sorted.map(([date,dayLogs])=>(
+          <div key={date} style={{marginBottom:20}}>
+            {/* Date header */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:.5}}>
+                📅 {fmtDate(date).toUpperCase()}
+              </div>
+              <div style={{flex:1,height:1,background:"rgba(108,99,255,0.1)"}}/>
+              <div style={{fontSize:10,color:"var(--text3)"}}>
+                {dayLogs.length} งาน · {dayLogs.reduce((s,l)=>s+(l.hours||0),0)} ชม.
+              </div>
             </div>
+
             {dayLogs.map(log=>{
               const [exp,setExp]=useState(false)
               const cat=getCat(log.category)
+              const st=STATUS_CFG[log.status]||STATUS_CFG.draft
               return (
-                <div key={log.id} className="log-card" onClick={()=>setExp(!exp)}>
-                  <div className="log-acc" style={{background:cat.color}}/>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:10,paddingLeft:8}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div key={log.id} className="log-card" onClick={()=>setExp(!exp)}
+                  style={{borderLeft:`3px solid ${st.dot}`, paddingLeft:0}}>
+                  <div className="log-acc" style={{background:st.dot, width:3}}/>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10,paddingLeft:10}}>
+
+                    {/* Main content */}
+                    <div style={{flex:1,minWidth:0}}>
+                      {/* Title row */}
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
                         <span style={{fontWeight:600,fontSize:14,color:"var(--text)"}}>{log.title}</span>
                         <Badge category={log.category}/>
+                        <StatusBadge status={log.status}/>
                       </div>
-                      <div style={{fontSize:12,color:"var(--text2)",marginTop:4,lineHeight:1.5}}>{log.aiSummary||log.description}</div>
-                      {log.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:8,flexWrap:"wrap"}}>{log.tags.map(t=><span key={t} className="tag-chip" style={{fontSize:10}}>#{t}</span>)}</div>}
+
+                      {/* Summary */}
+                      {(log.aiSummary||log.description)&&
+                        <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.55,marginBottom:6}}>
+                          {log.aiSummary||log.description}
+                        </div>
+                      }
+
+                      {/* Tags */}
+                      {log.tags?.length>0&&
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                          {log.tags.map(t=><span key={t} className="tag-chip" style={{fontSize:10}}>#{t}</span>)}
+                        </div>
+                      }
                     </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
+
+                    {/* Right meta */}
+                    <div style={{textAlign:"right",flexShrink:0,minWidth:52}}>
                       <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDate(log.date)}</div>
-                      <div style={{fontSize:12,color:cat.color,fontWeight:600,marginTop:2}}>{log.hours} ชม.</div>
+                      <div style={{fontSize:12,color:cat.color,fontWeight:700,marginTop:2}}>{log.hours} ชม.</div>
                     </div>
                   </div>
-                  {exp&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",display:"flex",gap:8,justifyContent:"flex-end",paddingLeft:8}}>
-                    <button onClick={e=>{e.stopPropagation();onEdit(log)}} className="btn btn-ghost btn-sm">แก้ไข</button>
-                    <button onClick={e=>{e.stopPropagation();onDelete(log.id)}} className="btn btn-danger btn-sm">ลบ</button>
-                  </div>}
+
+                  {/* Expanded actions */}
+                  {exp&&(
+                    <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",paddingLeft:10}}>
+                      {/* Quick status change */}
+                      <div style={{marginBottom:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",marginBottom:6,letterSpacing:.5}}>เปลี่ยนสถานะ</div>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                          {Object.entries(STATUS_CFG).map(([k,s])=>(
+                            <button key={k} onClick={e=>{
+                              e.stopPropagation()
+                              onStatusChange&&onStatusChange(log.id, k)
+                            }} style={{
+                              display:"flex", alignItems:"center", gap:4,
+                              padding:"5px 10px", border:"1.5px solid",
+                              borderRadius:8, fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"var(--font)", transition:"all .15s",
+                              borderColor: log.status===k ? s.border : "rgba(200,210,240,0.4)",
+                              background:  log.status===k ? s.bg    : "rgba(255,255,255,0.5)",
+                              color:       log.status===k ? s.color : "var(--text3)",
+                              transform:   log.status===k ? "scale(1.03)" : "scale(1)",
+                            }}>
+                              {s.emoji} {s.label}
+                              {log.status===k&&<span style={{fontSize:9}}>✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Edit/Delete */}
+                      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                        <button onClick={e=>{e.stopPropagation();onEdit(log)}} className="btn btn-ghost btn-sm">✏️ แก้ไข</button>
+                        <button onClick={e=>{e.stopPropagation();onDelete(log.id)}} className="btn btn-danger btn-sm">🗑 ลบ</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1726,6 +1858,13 @@ export default function App(){
   showT('ลบงานแล้ว')
 }
 
+  async function handleStatusChange(id, newStatus) {
+    await supabase.from('work_logs').update({ status: newStatus }).eq('id', id)
+    setLogs(ls => ls.map(l => l.id===id ? {...l, status:newStatus} : l))
+    const ST = { done:'✅ เสร็จแล้ว', in_progress:'🔄 กำลังทำ', draft:'📝 ร่าง' }
+    showT(ST[newStatus]||'อัปเดตสถานะแล้ว')
+  }
+
   // Sidebar nav structure
   const mainNav=[
     {id:"dashboard",     icon:"▦",  label:"Dashboard"},
@@ -1792,7 +1931,7 @@ export default function App(){
 }
     switch(page){
       case "dashboard":   return <DashboardPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onReport={()=>setShowReport(true)}/>
-      case "logs":        return <LogsPage logs={logs} onEdit={log=>{setEditLog(log);setShowForm(true);setPage("log")}} onDelete={handleDelete} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}}/>
+      case "logs":        return <LogsPage logs={logs} onEdit={log=>{setEditLog(log);setShowForm(true);setPage("log")}} onDelete={handleDelete} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onStatusChange={handleStatusChange}/>
       case "gallery":
   return <GalleryPageFull logs={logs} />
       case "portfolio":   return <PortfolioPage logs={logs}/>

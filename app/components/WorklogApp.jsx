@@ -1083,6 +1083,13 @@ function CommandPalette({onClose,onAction}){
 // LOG FORM
 // ─────────────────────────────────────────
 function LogForm({ initial, onSave, onCancel }) {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<=768)
+    check()
+    window.addEventListener('resize',check)
+    return()=>window.removeEventListener('resize',check)
+  },[])
   const [form, setForm] = useState(initial || {
     title:"", description:"", category:"graphic",
     hours:2, status:"done", tags:[], date:today(),
@@ -1137,7 +1144,7 @@ function LogForm({ initial, onSave, onCancel }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
-      <div className="lf-2col" style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:12,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"140px 1fr",gap:12,marginBottom:14}}>
         <div><label style={labelStyle}>วันที่</label><input className="input" type="date" value={form.date} onChange={e=>set("date",e.target.value)}/></div>
         <div><label style={labelStyle}>ชื่องาน *</label><input className="input" placeholder="เช่น ออกแบบโปสเตอร์..." value={form.title} onChange={e=>set("title",e.target.value)}/></div>
       </div>
@@ -1157,7 +1164,7 @@ function LogForm({ initial, onSave, onCancel }) {
         )}
       </div>
 
-      <div className="lf-3col" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:14}}>
         <div><label style={labelStyle}>หมวดหมู่</label>
           <select className="input" value={form.category} onChange={e=>set("category",e.target.value)}>
             {CATS.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
@@ -1300,6 +1307,13 @@ function ReportModal({logs,onClose}){
 // DASHBOARD
 // ─────────────────────────────────────────
 function DashboardPage({logs,onAdd,onReport}){
+  const [isMobile,setIsMobile]=useState(false)
+  useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<=768)
+    check()
+    window.addEventListener('resize',check)
+    return()=>window.removeEventListener('resize',check)
+  },[])
   const stats=getStats(logs)
   const weeklyData=getWeeklyData(logs)
   const trendData=getTrendData(logs)
@@ -1329,7 +1343,7 @@ function DashboardPage({logs,onAdd,onReport}){
       <div className="hero">
         <div className="hero-orb" style={{width:280,height:280,top:-100,right:-60,background:"radial-gradient(circle,rgba(108,99,255,0.18),transparent)"}}/>
         <div className="hero-orb" style={{width:200,height:200,bottom:-60,left:160,background:"radial-gradient(circle,rgba(6,182,212,0.14),transparent)"}}/>
-        <div style={{position:"relative",display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:16}}>
+        <div style={{position:"relative",display:"flex",flexDirection:isMobile?"column":"row",alignItems:"flex-start",justifyContent:"space-between",gap:16}}>
           <div>
             <div style={{fontSize:13,color:"var(--text2)",marginBottom:4}}>{greeting}</div>
             <div className="hero-title">สวัสดีครับ 👋</div>
@@ -1646,6 +1660,14 @@ export default function App(){
   const [showCmd,setShowCmd]=useState(false)
   const [toast,setToast]=useState(null)
   const [mobMenu,setMobMenu]=useState(false)
+  const [isMobile,setIsMobile]=useState(false)
+
+  useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<=768)
+    check()
+    window.addEventListener('resize',check)
+    return()=>window.removeEventListener('resize',check)
+  },[])
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
 

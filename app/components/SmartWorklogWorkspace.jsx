@@ -121,6 +121,17 @@ const CSS = `
 @keyframes ww-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 .ww-spin { animation: ww-spin 1.2s linear infinite; display: inline-block; }
 .ww-pulse { animation: ww-pulse 1.5s ease-in-out infinite; }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .ww-2col { grid-template-columns: 1fr !important; }
+  .ww-title-row { grid-template-columns: 1fr !important; }
+  .ww-header { flex-direction: column; align-items: flex-start !important; }
+  .ww-header-btns { width: 100%; display: flex; gap: 8px; }
+  .ww-header-btns button { flex: 1; justify-content: center; }
+  .ww-ai-panel-sticky { position: static !important; }
+  .ww-status-row { grid-template-columns: 1fr !important; }
+}
 `
 
 // ─────────────────────────────────────────
@@ -428,7 +439,15 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   const [uploadProgress, setUploadProgress] = useState(0)
   const [autoSaved, setAutoSaved] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const fileRef = useRef()
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -497,9 +516,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
       <div className="ww" style={{ animation:'ww-slide .3s ease' }}>
 
         {/* ── Page Header ── */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10, marginBottom:20 }}>
+        <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent:'space-between', gap:10, marginBottom:20 }}>
           <div>
-            <div style={{ fontSize:20, fontWeight:700, color:'#1a1a2e', display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ fontSize:20, fontWeight:700, color:'#1a1a2e', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
               {initial ? 'แก้ไขงาน' : 'บันทึกงานใหม่'}
               <span style={{ background:cat.bg, color:cat.color, fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:20 }}>
                 {cat.icon} {cat.label}
@@ -510,7 +529,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
               {autoSaved && <span style={{ color:'#10B981', fontSize:11, fontWeight:500 }}>✓ Auto-saved</span>}
             </div>
           </div>
-          <div style={{ display:'flex', gap:8 }}>
+          <div style={{ display:'flex', gap:8, width: isMobile ? '100%' : 'auto' }}>
             <button onClick={onCancel} className="ww-btn-ghost">ยกเลิก</button>
             <button onClick={handleSave} disabled={!(form.title || '').trim() || saving} className="ww-btn-primary">
               {saving ? '⏳ กำลังบันทึก...' : '✓ บันทึกงาน'}
@@ -519,14 +538,14 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
         </div>
 
         {/* ── 2-Column Layout ── */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 290px', gap:16, alignItems:'start' }}>
+        <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 290px', gap:16, alignItems:'start' }}>
 
           {/* ── LEFT: Editor ── */}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
             {/* Title + Date */}
             <div className="ww-glass" style={{ padding:20 }}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 150px', gap:12, marginBottom:14 }}>
+              <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 150px', gap:12, marginBottom:14 }}>
                 <div>
                   <label className="ww-label">ชื่องาน *</label>
                   <div style={{ display:'flex', gap:8 }}>
@@ -570,7 +589,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
 
             {/* Status + Hours + Timer */}
             <div className="ww-glass" style={{ padding:20 }}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+              <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:12, marginBottom:14 }}>
                 <div>
                   <label className="ww-label">สถานะ</label>
                   <div style={{ display:'flex', gap:5 }}>
@@ -710,7 +729,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
           </div>
 
           {/* ── RIGHT: AI Sidebar ── */}
-          <div style={{ position:'sticky', top:80 }}>
+          <div style={{ position: isMobile ? 'static' : 'sticky', top:80 }}>
             <div className="ww-glass" style={{ padding:18 }}>
               <div style={{ fontSize:12, fontWeight:600, color:'#1a1a2e', marginBottom:14, display:'flex', alignItems:'center', gap:6 }}>
                 🤖 AI Assistant

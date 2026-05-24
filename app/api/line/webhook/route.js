@@ -103,11 +103,17 @@ async function saveWorklog(lineUserId, analyzed, imageUrls=[]) {
 }
 
 async function logMessage(userId, type, content) {
-  await supabase.from('line_messages').insert({
-    line_user_id: userId, message_type: type,
-    content: String(content||'').slice(0,500),
-    status: 'received', created_at: new Date().toISOString(),
-  }).catch(e => console.error('[SUPA] logMessage error:', e))
+  try {
+    await supabase.from('line_messages').insert({
+      line_user_id: userId,
+      message_type: type,
+      content: String(content||'').slice(0,500),
+      status: 'received',
+      created_at: new Date().toISOString(),
+    })
+  } catch(e) {
+    console.error('[SUPA] logMessage error:', e)
+  }
 }
 
 // ── Claude AI ──

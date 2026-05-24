@@ -137,7 +137,82 @@ const CSS = `
 // ─────────────────────────────────────────
 // LIVE TIMER
 // ─────────────────────────────────────────
-function LiveTimer({ onHoursChange }) {
+// Status config
+const STATUS_CONFIG = {
+  done:        { label:'✅ เสร็จแล้ว',  color:'#10B981', bg:'rgba(16,185,129,0.12)',  border:'rgba(16,185,129,0.35)',  dot:'#10B981' },
+  in_progress: { label:'🔄 กำลังทำ',   color:'#F59E0B', bg:'rgba(245,158,11,0.12)',  border:'rgba(245,158,11,0.35)',  dot:'#F59E0B' },
+  draft:       { label:'📝 ร่าง',       color:'#6C63FF', bg:'rgba(108,99,255,0.10)',  border:'rgba(108,99,255,0.28)',  dot:'#6C63FF' },
+}
+
+// Keywords that trigger status change
+const STATUS_KEYWORDS = {
+  done:        ['เสร็จแล้ว','เสร็จ','done','complete','ส่งแล้ว','ปิดงาน','เรียบร้อย','ครบ'],
+  in_progress: ['กำลังทำ','กำลัง','doing','inprogress','ยังทำ','ติดอยู่','กำลังแก้'],
+  draft:       ['ร่าง','draft','แพลน','plan','ยังไม่ได้ทำ','ค้างไว้','รอ','hold'],
+}
+
+function detectStatusFromText(text) {
+  const t = text.toLowerCase()
+  for (const [status, words] of Object.entries(STATUS_KEYWORDS)) {
+    if (words.some(w => t.includes(w))) return status
+  }
+  return null
+}
+
+// Smart Status Selector with indicator
+function StatusSelector({ value, onChange, timerRunning }) {
+  const statuses = ['done','in_progress','draft']
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+      {/* Current status badge */}
+      <div style={{
+        display:'flex', alignItems:'center', gap:8,
+        background: STATUS_CONFIG[value].bg,
+        border: '1.5px solid ' + STATUS_CONFIG[value].border,
+        borderRadius:12, padding:'10px 14px', marginBottom:4,
+      }}>
+        <div style={{
+          width:8, height:8, borderRadius:'50%',
+          background: STATUS_CONFIG[value].dot,
+          boxShadow: '0 0 0 3px ' + STATUS_CONFIG[value].dot + '30',
+          animation: value==='in_progress' ? 'ww-pulse 1.5s infinite' : 'none',
+          flexShrink:0,
+        }}/>
+        <span style={{ fontSize:13, fontWeight:700, color: STATUS_CONFIG[value].color }}>
+          {STATUS_CONFIG[value].label}
+        </span>
+        {timerRunning && (
+          <span style={{ marginLeft:'auto', fontSize:10, color:'#F59E0B', fontWeight:600, background:'rgba(245,158,11,0.1)', padding:'2px 8px', borderRadius:20 }}>
+            ⏱ กำลังจับเวลา
+          </span>
+        )}
+      </div>
+      {/* Selector buttons */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6 }}>
+        {statuses.map(s => {
+          const cfg = STATUS_CONFIG[s]
+          const active = value === s
+          return (
+            <button key={s} onClick={() => onChange(s)} style={{
+              padding:'9px 6px', border:'1.5px solid',
+              borderRadius:10, fontSize:12, fontWeight:600,
+              cursor:'pointer', fontFamily:'inherit', textAlign:'center',
+              transition:'all .15s',
+              borderColor: active ? cfg.border : 'rgba(200,210,240,0.4)',
+              background:  active ? cfg.bg    : 'rgba(255,255,255,0.4)',
+              color:       active ? cfg.color : '#9ca3af',
+              transform:   active ? 'scale(1.03)' : 'scale(1)',
+            }}>
+              {s==='done' ? '✅ เสร็จ' : s==='in_progress' ? '🔄 กำลังทำ' : '📝 ร่าง'}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function LiveTimer({ onHoursChange, onStart, onStop }) {
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const intervalRef = useRef(null)
@@ -157,6 +232,13 @@ function LiveTimer({ onHoursChange }) {
     return () => clearInterval(intervalRef.current)
   }, [running])
 
+  function toggle() {
+    const next = !running
+    setRunning(next)
+    if (next) onStart?.()
+    else onStop?.()
+  }
+
   function reset() { setRunning(false); setElapsed(0); onHoursChange(0) }
 
   const progress = Math.min((elapsed / (8 * 3600)) * 100, 100)
@@ -164,7 +246,6 @@ function LiveTimer({ onHoursChange }) {
 
   return (
     <div className="ww-mini" style={{ display:'flex', alignItems:'center', gap:12 }}>
-      {/* Circle progress */}
       <div style={{ position:'relative', width:52, height:52, flexShrink:0 }}>
         <svg width="52" height="52" viewBox="0 0 52 52">
           <circle cx="26" cy="26" r="22" fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="4"/>
@@ -186,21 +267,24 @@ function LiveTimer({ onHoursChange }) {
           {fmtTimer(elapsed)}
         </div>
         <div style={{ fontSize:10, color:'#9ca3af', marginTop:2 }}>
-          {running ? 'กำลังนับเวลา...' : elapsed > 0 ? 'หยุดชั่วคราว' : 'กดเพื่อเริ่มนับ'}
+          {running ? '🟢 กำลังนับเวลา...' : elapsed > 0 ? '⏸ หยุดชั่วคราว' : 'กดเพื่อเริ่มนับ'}
         </div>
-        <div className="ww-prog"><div className="ww-prog-fill" style={{ width:progress+'%' }}/></div>
+        <div className="ww-prog"><div className="ww-prog-fill" style={{ width:progress+'%', background:color }}/></div>
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-        <button onClick={() => setRunning(r => !r)} style={{
-          padding:'6px 12px', border:'none', borderRadius:8,
-          fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
-          background: running ? 'rgba(239,68,68,0.1)' : 'linear-gradient(135deg,#6C63FF,#9B8FFF)',
+        <button onClick={toggle} style={{
+          width:44, height:44, border:'none', borderRadius:12,
+          fontSize:18, fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+          background: running ? 'rgba(239,68,68,0.12)' : 'linear-gradient(135deg,#6C63FF,#9B8FFF)',
           color: running ? '#EF4444' : 'white',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          boxShadow: running ? 'none' : '0 4px 12px rgba(108,99,255,0.35)',
+          transition:'all .15s',
         }}>{running ? '⏸' : '▶'}</button>
         {elapsed > 0 && (
           <button onClick={reset} style={{
-            padding:'5px 12px', borderRadius:8, fontSize:11, cursor:'pointer', fontFamily:'inherit',
+            width:44, height:28, borderRadius:8, fontSize:11, cursor:'pointer', fontFamily:'inherit',
             border:'1px solid rgba(200,210,240,0.5)', background:'rgba(255,255,255,0.5)', color:'#9ca3af',
           }}>↺</button>
         )}
@@ -439,15 +523,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   const [uploadProgress, setUploadProgress] = useState(0)
   const [autoSaved, setAutoSaved] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+  const [timerRunning, setTimerRunning] = useState(false)
+  const [statusHint, setStatusHint] = useState(null)
   const fileRef = useRef()
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth <= 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -516,7 +594,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
       <div className="ww" style={{ animation:'ww-slide .3s ease' }}>
 
         {/* ── Page Header ── */}
-        <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent:'space-between', gap:10, marginBottom:20 }}>
+        <div className="ww-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10, marginBottom:20 }}>
           <div>
             <div style={{ fontSize:20, fontWeight:700, color:'#1a1a2e', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
               {initial ? 'แก้ไขงาน' : 'บันทึกงานใหม่'}
@@ -529,7 +607,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
               {autoSaved && <span style={{ color:'#10B981', fontSize:11, fontWeight:500 }}>✓ Auto-saved</span>}
             </div>
           </div>
-          <div style={{ display:'flex', gap:8, width: isMobile ? '100%' : 'auto' }}>
+          <div className="ww-header-btns" style={{ display:'flex', gap:8 }}>
             <button onClick={onCancel} className="ww-btn-ghost">ยกเลิก</button>
             <button onClick={handleSave} disabled={!(form.title || '').trim() || saving} className="ww-btn-primary">
               {saving ? '⏳ กำลังบันทึก...' : '✓ บันทึกงาน'}
@@ -538,14 +616,14 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
         </div>
 
         {/* ── 2-Column Layout ── */}
-        <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 290px', gap:16, alignItems:'start' }}>
+        <div className="ww-2col" style={{ display:'grid', gridTemplateColumns:'1fr 290px', gap:16, alignItems:'start' }}>
 
           {/* ── LEFT: Editor ── */}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
             {/* Title + Date */}
             <div className="ww-glass" style={{ padding:20 }}>
-              <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 150px', gap:12, marginBottom:14 }}>
+              <div className="ww-title-row" style={{ display:'grid', gridTemplateColumns:'1fr 150px', gap:12, marginBottom:14 }}>
                 <div>
                   <label className="ww-label">ชื่องาน *</label>
                   <div style={{ display:'flex', gap:8 }}>
@@ -574,7 +652,23 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                 <textarea className="ww-input ww-textarea" style={{ minHeight:130 }}
                   placeholder="พิมพ์รายละเอียดสั้นๆ ก็ได้ เช่น ทำโมชั่นโฆษณา แก้สีวิดีโอ เพิ่มข้อความ..."
                   value={form.description}
-                  onChange={e => set('description', e.target.value)}/>
+                  onChange={e => {
+                    set('description', e.target.value)
+                    const detected = detectStatusFromText(e.target.value)
+                    if (detected && detected !== form.status) setStatusHint(detected)
+                    else setStatusHint(null)
+                  }}/>
+                {statusHint && (
+                  <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:8, background: STATUS_CONFIG[statusHint].bg, border:'1px solid '+STATUS_CONFIG[statusHint].border, borderRadius:10, padding:'7px 12px' }}>
+                    <span style={{ fontSize:11, color: STATUS_CONFIG[statusHint].color, fontWeight:600 }}>
+                      🔍 ตรวจพบ: {STATUS_CONFIG[statusHint].label}
+                    </span>
+                    <button onClick={() => { set('status', statusHint); setStatusHint(null) }} style={{ marginLeft:'auto', padding:'3px 10px', background: STATUS_CONFIG[statusHint].color, border:'none', borderRadius:7, fontSize:11, color:'white', cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}>
+                      เปลี่ยนสถานะ
+                    </button>
+                    <button onClick={() => setStatusHint(null)} style={{ padding:'3px 8px', background:'transparent', border:'none', fontSize:12, color:'#9ca3af', cursor:'pointer' }}>×</button>
+                  </div>
+                )}
               </div>
 
               {/* AI Summary result */}
@@ -589,45 +683,38 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
 
             {/* Status + Hours + Timer */}
             <div className="ww-glass" style={{ padding:20 }}>
-              <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:12, marginBottom:14 }}>
-                <div>
-                  <label className="ww-label">สถานะ</label>
-                  <div style={{ display:'flex', gap:5 }}>
-                    {[
-                      { v:'done',        l:'✅ เสร็จ',   c:'#10B981' },
-                      { v:'in_progress', l:'🔄 กำลังทำ', c:'#F59E0B' },
-                      { v:'draft',       l:'📝 ร่าง',    c:'#9ca3af' },
-                    ].map(s => (
-                      <button key={s.v} onClick={() => set('status', s.v)} style={{
-                        flex:1, padding:'7px 4px', border:'1px solid', borderRadius:9,
-                        fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit',
-                        textAlign:'center', transition:'all .15s',
-                        borderColor: form.status===s.v ? s.c+'60' : 'rgba(200,210,240,0.4)',
-                        background:  form.status===s.v ? s.c+'12' : 'rgba(255,255,255,0.4)',
-                        color:       form.status===s.v ? s.c : '#9ca3af',
-                      }}>{s.l}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="ww-label">เวลาที่ใช้</label>
-                  <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-                    {HOURS_OPT.map(h => (
-                      <button key={h} onClick={() => set('hours', h)} style={{
-                        padding:'5px 9px', borderRadius:8, border:'1px solid', fontSize:11,
-                        cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
-                        borderColor: form.hours===h ? 'rgba(108,99,255,0.4)' : 'rgba(200,210,240,0.4)',
-                        background:  form.hours===h ? 'rgba(108,99,255,0.1)' : 'rgba(255,255,255,0.4)',
-                        color:       form.hours===h ? '#6C63FF' : '#9ca3af',
-                        fontWeight:  form.hours===h ? 700 : 400,
-                      }}>{h}h</button>
-                    ))}
-                  </div>
+              <label className="ww-label">สถานะงาน</label>
+              <StatusSelector
+                value={form.status}
+                onChange={v => set('status', v)}
+                timerRunning={timerRunning}
+              />
+
+              <div style={{ marginTop:16 }}>
+                <label className="ww-label">เวลาที่ใช้</label>
+                <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                  {HOURS_OPT.map(h => (
+                    <button key={h} onClick={() => set('hours', h)} style={{
+                      padding:'6px 10px', borderRadius:8, border:'1.5px solid', fontSize:12,
+                      cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
+                      borderColor: form.hours===h ? 'rgba(108,99,255,0.45)' : 'rgba(200,210,240,0.4)',
+                      background:  form.hours===h ? 'rgba(108,99,255,0.12)' : 'rgba(255,255,255,0.4)',
+                      color:       form.hours===h ? '#6C63FF' : '#9ca3af',
+                      fontWeight:  form.hours===h ? 700 : 400,
+                      transform:   form.hours===h ? 'scale(1.05)' : 'scale(1)',
+                    }}>{h}h</button>
+                  ))}
                 </div>
               </div>
 
-              <label className="ww-label">⏱ LIVE TIMER</label>
-              <LiveTimer onHoursChange={h => { if (h > 0) set('hours', Math.max(0.5, parseFloat(h.toFixed(1)))) }}/>
+              <div style={{ marginTop:16 }}>
+                <label className="ww-label">⏱ LIVE TIMER</label>
+                <LiveTimer
+                  onHoursChange={h => { if (h > 0) set('hours', Math.max(0.5, parseFloat(h.toFixed(1)))) }}
+                  onStart={() => { setTimerRunning(true); if (form.status !== 'in_progress') set('status', 'in_progress') }}
+                  onStop={() => setTimerRunning(false)}
+                />
+              </div>
             </div>
 
             {/* Category Picker */}
@@ -729,7 +816,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
           </div>
 
           {/* ── RIGHT: AI Sidebar ── */}
-          <div style={{ position: isMobile ? 'static' : 'sticky', top:80 }}>
+          <div className="ww-ai-panel-sticky" style={{ position:'sticky', top:80 }}>
             <div className="ww-glass" style={{ padding:18 }}>
               <div style={{ fontSize:12, fontWeight:600, color:'#1a1a2e', marginBottom:14, display:'flex', alignItems:'center', gap:6 }}>
                 🤖 AI Assistant

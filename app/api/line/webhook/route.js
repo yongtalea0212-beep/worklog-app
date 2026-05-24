@@ -273,114 +273,117 @@ function msgImageReceived(imgUrl) {
 
 // 2. Worklog Summary Card (after save)
 function msgWorklogSaved(d, saved) {
-  const cat     = CAT[d.category] || CAT.other
-  const tags    = (d.tags||[]).slice(0,4)
-  const imgUrl  = d.images?.[0]
-  const logId   = saved?.id || ''
-
-  const tagBoxes = tags.map(t=>({
-    type:'box', layout:'vertical', cornerRadius:'20px',
-    paddingAll:'4px', paddingStart:'10px', paddingEnd:'10px',
-    backgroundColor: cat.bg,
-    contents:[{ type:'text', text:'#'+t, size:'xs', color:cat.color, weight:'bold' }]
-  }))
+  const cat    = CAT[d.category] || CAT.other
+  const tags   = (d.tags||[]).slice(0,4)
+  const imgUrl = d.images?.[0]
+  const logId  = saved?.id || ''
 
   return [{
     type: 'flex',
-    altText: '✅ บันทึกงานแล้ว: '+d.title,
+    altText: '✅ บันทึกงานแล้ว: ' + d.title,
     contents: {
       type: 'bubble',
       size: 'mega',
 
-      // Hero image (if any)
+      // Hero image
       ...(imgUrl ? {
         hero: {
-          type:'image', url:imgUrl, size:'full',
-          aspectRatio:'20:11', aspectMode:'cover',
-          action:{ type:'uri', uri:APP_URL },
+          type: 'image', url: imgUrl, size: 'full',
+          aspectRatio: '20:11', aspectMode: 'cover',
+          action: { type:'uri', uri: APP_URL },
         }
       } : {}),
 
-      // Header — category badge + title
+      // Header
       header: {
-        type:'box', layout:'vertical', paddingAll:'16px',
+        type: 'box', layout: 'vertical', paddingAll: '16px',
         backgroundColor: cat.bg,
-        contents:[
+        contents: [
           {
-            type:'box', layout:'horizontal', spacing:'sm',
-            contents:[
-              { type:'text', text:cat.emoji, size:'sm', flex:0 },
-              { type:'text', text:cat.label.toUpperCase(), size:'xs', color:cat.color, weight:'bold', flex:1 },
+            type: 'box', layout: 'horizontal', spacing: 'sm',
+            contents: [
+              { type:'text', text: cat.emoji, size:'sm', flex:0 },
+              { type:'text', text: cat.label.toUpperCase(), size:'xs', color:cat.color, weight:'bold', flex:1 },
               {
-                type:'box', layout:'vertical', cornerRadius:'20px',
-                paddingAll:'3px', paddingStart:'10px', paddingEnd:'10px',
+                type:'box', layout:'vertical',
+                cornerRadius:'20px', paddingAll:'3px',
+                paddingStart:'10px', paddingEnd:'10px',
                 backgroundColor: BRAND.green,
                 contents:[{ type:'text', text:'✅ บันทึกแล้ว', size:'xs', color:BRAND.white, weight:'bold' }]
               }
             ]
           },
-          { type:'text', text:d.title, weight:'bold', size:'lg', color:BRAND.text, wrap:true, margin:'sm' },
+          { type:'text', text: d.title, weight:'bold', size:'lg', color:BRAND.text, wrap:true, margin:'sm' },
         ]
       },
 
-      // Body — stats + summary + tags
+      // Body
       body: {
-        type:'box', layout:'vertical', paddingAll:'16px', spacing:'md',
+        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
         backgroundColor: BRAND.cardBg,
-        contents:[
+        contents: [
 
           // Stats row
           {
-            type:'box', layout:'horizontal', spacing:'sm',
-            contents:[
+            type: 'box', layout: 'horizontal', spacing: 'sm',
+            contents: [
               {
-                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
-                paddingAll:'10px', backgroundColor:BRAND.white,
-                borderColor:'#E8E0FF', borderWidth:'1px',
-                contents:[
+                type: 'box', layout: 'vertical', flex:1,
+                cornerRadius: '10px', paddingAll: '10px',
+                backgroundColor: BRAND.white,
+                contents: [
                   { type:'text', text:'⏱', size:'sm', align:'center' },
-                  { type:'text', text:String(d.hours||1)+' ชม.', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
+                  { type:'text', text: String(d.hours||1)+' ชม.', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
                 ]
               },
               {
-                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
-                paddingAll:'10px', backgroundColor:BRAND.white,
-                borderColor:'#E8E0FF', borderWidth:'1px',
-                contents:[
+                type: 'box', layout: 'vertical', flex:1,
+                cornerRadius: '10px', paddingAll: '10px',
+                backgroundColor: BRAND.white,
+                contents: [
                   { type:'text', text:'📂', size:'sm', align:'center' },
-                  { type:'text', text:cat.label, size:'xs', weight:'bold', color:cat.color, align:'center', margin:'xs', wrap:true },
+                  { type:'text', text: cat.label, size:'xs', weight:'bold', color:cat.color, align:'center', margin:'xs' },
                 ]
               },
               {
-                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
-                paddingAll:'10px', backgroundColor:BRAND.white,
-                borderColor:'#E8E0FF', borderWidth:'1px',
-                contents:[
+                type: 'box', layout: 'vertical', flex:1,
+                cornerRadius: '10px', paddingAll: '10px',
+                backgroundColor: BRAND.white,
+                contents: [
                   { type:'text', text:'🖼', size:'sm', align:'center' },
-                  { type:'text', text:String((d.images||[]).length)+' รูป', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
+                  { type:'text', text: String((d.images||[]).length)+' รูป', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
                 ]
               },
             ]
           },
 
-          // AI Summary box
+          // AI Summary
           ...(d.summary ? [{
-            type:'box', layout:'vertical', cornerRadius:'10px',
-            paddingAll:'12px', backgroundColor:BRAND.purpleBg,
-            borderColor:'#D8D0FF', borderWidth:'1px',
-            contents:[
-              { type:'box', layout:'horizontal', spacing:'sm', contents:[
-                { type:'text', text:'✨', size:'xs', flex:0 },
-                { type:'text', text:'AI Summary', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
-              ]},
-              { type:'text', text:d.summary, size:'sm', color:BRAND.textSub, wrap:true, margin:'sm' },
+            type: 'box', layout: 'vertical',
+            cornerRadius: '10px', paddingAll: '12px',
+            backgroundColor: BRAND.purpleBg,
+            contents: [
+              {
+                type: 'box', layout: 'horizontal', spacing: 'sm',
+                contents: [
+                  { type:'text', text:'✨', size:'xs', flex:0 },
+                  { type:'text', text:'AI Summary', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
+                ]
+              },
+              { type:'text', text: d.summary, size:'sm', color:BRAND.textSub, wrap:true, margin:'sm' },
             ]
           }] : []),
 
           // Tags
           ...(tags.length > 0 ? [{
-            type:'box', layout:'horizontal', spacing:'xs', wrap:true,
-            contents: tagBoxes,
+            type: 'box', layout: 'horizontal', spacing: 'xs',
+            contents: tags.map(t=>({
+              type: 'box', layout: 'vertical',
+              cornerRadius: '20px', paddingAll: '4px',
+              paddingStart: '10px', paddingEnd: '10px',
+              backgroundColor: cat.bg,
+              contents: [{ type:'text', text:'#'+t, size:'xs', color:cat.color, weight:'bold' }]
+            }))
           }] : []),
 
           // Date
@@ -388,38 +391,37 @@ function msgWorklogSaved(d, saved) {
         ]
       },
 
-      // Footer — action buttons
+      // Footer
       footer: {
-        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm',
+        type: 'box', layout: 'vertical', paddingAll: '12px', spacing: 'sm',
         backgroundColor: BRAND.cardBg,
-        contents:[
-          // Row 1 — edit + add image
+        contents: [
           {
-            type:'box', layout:'horizontal', spacing:'sm',
-            contents:[
+            type: 'box', layout: 'horizontal', spacing: 'sm',
+            contents: [
               {
-                type:'button', style:'secondary', height:'sm', flex:1,
-                action:{ type:'message', label:'✏️ แก้ไข', text:'/edit '+logId },
-                color:'#E8E0FF',
+                type: 'button', style: 'secondary', height: 'sm', flex: 1,
+                action: { type:'message', label:'✏️ แก้ไข', text:'/edit '+logId },
+                color: '#E8E0FF',
               },
               {
-                type:'button', style:'secondary', height:'sm', flex:1,
-                action:{ type:'message', label:'📸 เพิ่มรูป', text:'/addimage '+logId },
-                color:'#E8E0FF',
+                type: 'button', style: 'secondary', height: 'sm', flex: 1,
+                action: { type:'message', label:'📸 เพิ่มรูป', text:'/addimage '+logId },
+                color: '#E8E0FF',
               },
             ]
           },
-          // Row 2 — view in app
           {
-            type:'button', style:'primary', height:'sm',
+            type: 'button', style: 'primary', height: 'sm',
             color: BRAND.purple,
-            action:{ type:'uri', label:'🌐 ดูใน WorkLog AI', uri:APP_URL },
+            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
           },
         ]
       },
-      styles:{
-        header:{ separator:false },
-        footer:{ separator:true, separatorColor:'#E8E0FF' }
+
+      styles: {
+        header: { separator: false },
+        footer: { separator: true, separatorColor: '#E8E0FF' }
       }
     }
   }]

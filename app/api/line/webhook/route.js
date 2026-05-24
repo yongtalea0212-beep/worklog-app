@@ -76,6 +76,20 @@ async function replyLINE(token, messages) {
   } catch(e){ console.error('[REPLY]',e); return false }
 }
 
+// Push message (ส่งจาก WorkLog App → LINE)
+async function pushLINE(userId, messages) {
+  if (!LINE_TOKEN || !userId) return false
+  try {
+    const r = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+LINE_TOKEN },
+      body: JSON.stringify({ to: userId, messages }),
+    })
+    if (!r.ok) { console.error('[PUSH]', r.status, await r.json().catch(()=>({}))); return false }
+    return true
+  } catch(e) { console.error('[PUSH]', e); return false }
+}
+
 async function getContent(msgId) {
   if (!LINE_TOKEN) return null
   try {
@@ -656,6 +670,119 @@ function msgRecentLogs(logs) {
   }]
 }
 
+// 7. Status Update Card (ส่งจากแอปเมื่อเปลี่ยนสถานะ)
+function msgStatusUpdate(log, trigger) {
+  const cat = CAT[log.category||'other'] || CAT.other
+  const STATUS = {
+    done:        { emoji:'✅', label:'เสร็จแล้ว', color:BRAND.green,  bg:'#ECFDF5' },
+    in_progress: { emoji:'🔄', label:'กำลังทำ',   color:BRAND.amber,  bg:'#FFFBEB' },
+    draft:       { emoji:'📝', label:'ร่าง',       color:BRAND.purple, bg:BRAND.purpleBg },
+  }
+  const TRIGGERS = {
+    timer_start:   '▶ เริ่มจับเวลา',
+    status_change: '🔔 เปลี่ยนสถานะ',
+    save:          '💾 บันทึกงานแล้ว',
+  }
+  const st = STATUS[log.status] || STATUS.draft
+  const triggerLabel = TRIGGERS[trigger] || '📋 WorkLog AI'
+  const dateStr = log.date
+    ? new Date(log.date).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
+    : new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
+  const logId = log.id || ''
+
+  return [{
+    type: 'flex',
+    altText: triggerLabel + ': ' + (log.title||'งาน') + ' — ' + st.label,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', paddingAll: '14px',
+        backgroundColor: st.bg,
+        contents: [
+          {
+            type: 'box', layout: 'horizontal',
+            contents: [
+              { type:'text', text: triggerLabel, size:'xs', color:BRAND.textMuted, flex:1 },
+              {
+                type:'box', layout:'vertical',
+                cornerRadius:'20px', paddingAll:'3px',
+                paddingStart:'10px', paddingEnd:'10px',
+                backgroundColor: st.color + '22',
+                contents:[{ type:'text', text: st.emoji+' '+st.label, size:'xs', color:st.color, weight:'bold' }]
+              }
+            ]
+          },
+          { type:'text', text: log.title||'ไม่มีชื่องาน', weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
+        ]
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'sm',
+        backgroundColor: BRAND.cardBg,
+        contents: [
+          // AI Summary
+          ...(log.aiSummary ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'10px',
+            backgroundColor: BRAND.purpleBg,
+            contents:[
+              { type:'box', layout:'horizontal', spacing:'xs',
+                contents:[
+                  { type:'text', text:'✨', size:'xs', flex:0 },
+                  { type:'text', text:'AI Summary', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
+                ]},
+              { type:'text', text: log.aiSummary, size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+          // Meta row
+          {
+            type: 'box', layout: 'horizontal', spacing: 'sm',
+            contents: [
+              { type:'text', text: cat.emoji+' '+cat.label, size:'xs', color:BRAND.textMuted, flex:1 },
+              { type:'text', text: '⏱ '+(log.hours||0)+' ชม.', size:'xs', color:BRAND.textMuted, align:'center', flex:1 },
+              { type:'text', text: '📅 '+dateStr, size:'xs', color:BRAND.textMuted, align:'end', flex:1 },
+            ]
+          },
+          // Tags
+          ...(log.tags?.length ? [{
+            type:'box', layout:'horizontal', spacing:'xs',
+            contents: (log.tags||[]).slice(0,4).map(t=>({
+              type:'box', layout:'vertical',
+              cornerRadius:'20px', paddingAll:'3px', paddingStart:'8px', paddingEnd:'8px',
+              backgroundColor: cat.bg,
+              contents:[{ type:'text', text:'#'+t, size:'xxs', color:cat.color, weight:'bold' }]
+            }))
+          }] : []),
+        ]
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '12px', spacing: 'sm',
+        backgroundColor: BRAND.cardBg,
+        contents: [
+          // Status change buttons
+          {
+            type: 'box', layout: 'horizontal', spacing: 'sm',
+            contents: ['done','in_progress','draft'].map(s => ({
+              type: 'button',
+              action: { type:'postback', label: STATUS[s].emoji+(s==='done'?' เสร็จ':s==='in_progress'?' กำลังทำ':' ร่าง'), data:'action=status&logId='+logId+'&status='+s },
+              style: log.status === s ? 'primary' : 'secondary',
+              color: log.status === s ? STATUS[s].color : '#E8E0FF',
+              height: 'sm', flex: 1,
+            }))
+          },
+          {
+            type: 'button', style: 'primary', height: 'sm', color: BRAND.purple,
+            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
+          },
+        ]
+      },
+      styles: {
+        header: { separator: false },
+        footer: { separator: true, separatorColor: '#E8E0FF' }
+      }
+    }
+  }]
+}
+
 // ─────────────────────────────────────────
 // COMMANDS
 // ─────────────────────────────────────────
@@ -747,6 +874,10 @@ async function handleCmd(uid, text, token) {
       }
       return replyLINE(token,[{type:'text',text:'ไม่มี timer ที่ทำงาน'}])
     }
+  }
+
+  if (cmd==='/myid' || cmd==='/id') {
+    return replyLINE(token,[{ type:'text', text:'🆔 User ID ของคุณ:\n'+uid }])
   }
 
   if (cmd==='/help') {
@@ -842,6 +973,29 @@ async function processEvent(event) {
     }])
   }
 
+  // Postback from Flex Card buttons (status change)
+  if (event.type === 'postback') {
+    const params = new URLSearchParams(event.postback?.data || '')
+    const action = params.get('action')
+    const logId  = params.get('logId')
+    const newStatus = params.get('status')
+
+    if (action === 'status' && logId && newStatus) {
+      await updateWorklog(logId, { status: newStatus })
+      const updated = await getWorklog(logId)
+      if (updated) {
+        const d = {
+          id: updated.id, title: updated.title,
+          aiSummary: updated.ai_summary, category: updated.category,
+          hours: updated.hours_spent, status: newStatus,
+          tags: updated.tags || [], date: updated.date,
+        }
+        return replyLINE(token, msgStatusUpdate(d, 'status_change'))
+      }
+    }
+    return
+  }
+
   if (event.type!=='message') return
 
   // TEXT
@@ -902,6 +1056,24 @@ if (mtype==='text') {
 // ─────────────────────────────────────────
 // ROUTES
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// PUT — Push Flex Card จาก WorkLog App
+// WorkLog App เรียก: PUT /api/line/webhook
+// body: { userId, log, trigger }
+// ─────────────────────────────────────────
+export async function PUT(request) {
+  try {
+    const { userId, log, trigger } = await request.json()
+    if (!userId || !log) return NextResponse.json({ error:'Missing userId or log' }, { status:400 })
+    const messages = msgStatusUpdate(log, trigger || 'save')
+    const ok = await pushLINE(userId, messages)
+    return NextResponse.json({ ok })
+  } catch(e) {
+    console.error('[PUSH-ROUTE]', e)
+    return NextResponse.json({ error: e.message }, { status:500 })
+  }
+}
+
 export async function GET() {
   return NextResponse.json({
     status:'WorkLog AI LINE Bot v3 ✅',

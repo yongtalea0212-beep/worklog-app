@@ -724,6 +724,173 @@ body::before {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(108,99,255,0.22); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(108,99,255,0.38); }
+
+/* ════════════════════════════════════════
+   MOBILE RESPONSIVE
+════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .sb { display: none; }
+  .app { display: block; }
+  .main { min-height: 100vh; }
+
+  .topbar {
+    padding: 12px 16px;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topbar .btn-ghost { display: none; }
+
+  .content {
+    padding: 16px 14px 90px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .g2, .g3, .g3-1 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .hero { padding: 20px; }
+
+  .card { padding: 16px; }
+
+  .modal { padding: 20px; margin: 12px; }
+  .modal-wrap { padding: 12px; align-items: flex-end; }
+  .modal { border-radius: var(--r-lg) var(--r-lg) 0 0; max-height: 92vh; }
+
+  .toast { bottom: 90px; right: 16px; left: 16px; justify-content: center; }
+}
+
+/* ════════════════════════════════════════
+   MOBILE BOTTOM NAV
+════════════════════════════════════════ */
+.mob-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mob-nav {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.85);
+    box-shadow: 0 -4px 24px rgba(100,110,200,0.12);
+    justify-content: space-around; align-items: center;
+    padding: 8px 0 18px;
+    z-index: 100;
+  }
+
+  .mob-nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 5px 14px; border-radius: 12px;
+    font-size: 10px; color: var(--text2);
+    background: none; border: none; cursor: pointer;
+    font-family: var(--font); font-weight: 500;
+    transition: .15s; min-width: 52px;
+  }
+  .mob-nav-item .ni { font-size: 20px; }
+  .mob-nav-item.on { color: var(--accent); background: rgba(108,99,255,0.08); }
+
+  .mob-nav-fab {
+    width: 52px; height: 52px; border-radius: 16px;
+    background: linear-gradient(135deg, #6C63FF, #9B8FFF);
+    color: white; font-size: 26px; font-weight: 300;
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer;
+    margin-top: -20px;
+    box-shadow: 0 6px 20px rgba(108,99,255,0.4);
+    border: 3px solid rgba(255,255,255,0.9);
+    font-family: var(--font);
+    transition: .15s;
+  }
+  .mob-nav-fab:active { transform: scale(0.95); }
+}
+
+/* ════════════════════════════════════════
+   MOBILE BOTTOM SHEET MENU
+════════════════════════════════════════ */
+.mob-sheet-overlay {
+  position: fixed; inset: 0; z-index: 150;
+  background: rgba(26,26,46,0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fadeIn .2s ease;
+}
+
+.mob-sheet {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255,255,255,0.9);
+  padding: 0 14px 32px;
+  box-shadow: 0 -8px 40px rgba(100,110,200,0.18);
+  animation: slideUp .25s ease;
+}
+
+.mob-sheet-handle {
+  width: 36px; height: 4px;
+  background: rgba(108,99,255,0.25);
+  border-radius: 2px;
+  margin: 12px auto 4px;
+}
+
+.mob-sheet-label {
+  font-size: 11px; font-weight: 700; color: var(--text3);
+  letter-spacing: 1px; text-transform: uppercase;
+  padding: 12px 6px 8px;
+}
+
+.mob-sheet-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mob-sheet-item {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.9);
+  border-radius: 14px; padding: 13px 12px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; transition: .15s;
+  box-shadow: 0 2px 8px rgba(100,110,200,0.06);
+}
+.mob-sheet-item:active { background: rgba(108,99,255,0.07); }
+
+.mob-sheet-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: rgba(108,99,255,0.09);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; flex-shrink: 0;
+}
+
+.mob-sheet-text strong { font-size: 12px; font-weight: 600; color: var(--text); display: block; }
+.mob-sheet-text span   { font-size: 10px; color: var(--text3); }
+
+.mob-quick-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding: 0 2px 12px;
+  scrollbar-width: none;
+}
+.mob-quick-strip::-webkit-scrollbar { display: none; }
+
+.mob-quick-chip {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.9);
+  border-radius: 20px; padding: 8px 14px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--text);
+  cursor: pointer; white-space: nowrap;
+  font-family: var(--font);
+  box-shadow: 0 2px 8px rgba(100,110,200,0.06);
+  transition: .15s;
+}
+.mob-quick-chip:active { background: rgba(108,99,255,0.09); color: var(--accent); }
 `
 
 // ─────────────────────────────────────────
@@ -1471,6 +1638,9 @@ export default function App(){
   const [showReport,setShowReport]=useState(false)
   const [showCmd,setShowCmd]=useState(false)
   const [toast,setToast]=useState(null)
+  const [mobMenu,setMobMenu]=useState(false)
+
+  const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
 
   useEffect(()=>{
     async function load(){
@@ -1669,35 +1839,28 @@ export default function App(){
     <>
       <style>{CSS}</style>
       <div className="app">
-        {/* Sidebar */}
+        {/* ── Sidebar (desktop only, hidden on mobile via CSS) ── */}
         <div className="sb">
-          {/* Logo */}
           <div className="sb-logo">
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div className="logo-mark">✦</div>
               <div><div className="logo-name">WorkLog AI</div><div className="logo-sub">SaaS Platform</div></div>
             </div>
           </div>
-
-          {/* Search */}
           <button className="sb-search" onClick={()=>setShowCmd(true)}>
             <span style={{fontSize:13}}>🔍</span>
             <span style={{flex:1}}>ค้นหาคำสั่ง...</span>
             <kbd>⌘K</kbd>
           </button>
-
-          {/* Main Menu */}
           <div className="sb-section">Main Menu</div>
           {mainNav.map(item=>(
             <button key={item.id} className={`nav ${page===item.id&&!showForm?"on":item.id==="log"&&showForm?"on":""}`}
-              onClick={()=>{ setPage(item.id); if(item.id!=="log")setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null) }}>
+              onClick={()=>goPage(item.id)}>
               <div className="nav-icon">{item.icon}</div>
               {item.label}
               {item.badge>0&&<span className="nav-badge">{item.badge}</span>}
             </button>
           ))}
-
-          {/* Quick Actions */}
           <div className="sb-section">Quick Actions</div>
           {quickActions.map(item=>(
             <button key={item.id} className="nav" onClick={item.action}>
@@ -1705,8 +1868,6 @@ export default function App(){
               {item.label}
             </button>
           ))}
-
-          {/* Upgrade + User */}
           <div className="sb-upgrade">
             <div className="upgrade-badge">PRO</div>
             <div style={{fontSize:12,fontWeight:600,color:"var(--accent)",marginBottom:2}}>Unlimited AI</div>
@@ -1724,7 +1885,7 @@ export default function App(){
           </div>
         </div>
 
-        {/* Main */}
+        {/* ── Main content ── */}
         <div className="main">
           <div className="topbar">
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1735,15 +1896,66 @@ export default function App(){
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <button className="btn btn-ghost btn-sm" onClick={()=>setShowCmd(true)}>⌘ Command</button>
               <button onClick={()=>{setEditLog(null);setShowForm(true);setPage("log")}} className="btn btn-primary btn-sm">+ เพิ่มงาน</button>
+              {/* Hamburger — mobile only */}
+              <button onClick={()=>setMobMenu(true)} style={{display:"none",background:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.88)",borderRadius:10,width:36,height:36,alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:18}} className="mob-hamburger">☰</button>
             </div>
           </div>
           <div className="content">{renderPage()}</div>
         </div>
 
+        {/* ── Mobile Bottom Navigation ── */}
+        <div className="mob-nav">
+          <button className="mob-nav-item" onClick={()=>goPage("dashboard")}>
+            <span className="ni">▦</span><span>Dashboard</span>
+          </button>
+          <button className="mob-nav-item" onClick={()=>goPage("logs")}>
+            <span className="ni">≡</span><span>งาน{logs.length>0&&<> ({logs.length})</>}</span>
+          </button>
+          <button className="mob-nav-fab" onClick={()=>goPage("log")}>＋</button>
+          <button className="mob-nav-item" onClick={()=>goPage("calendar")}>
+            <span className="ni">📅</span><span>Calendar</span>
+          </button>
+          <button className="mob-nav-item" onClick={()=>setMobMenu(true)}>
+            <span className="ni">☰</span><span>เมนู</span>
+          </button>
+        </div>
+
+        {/* ── Mobile Bottom Sheet Menu ── */}
+        {mobMenu&&(
+          <div className="mob-sheet-overlay" onClick={()=>setMobMenu(false)}>
+            <div className="mob-sheet" onClick={e=>e.stopPropagation()}>
+              <div className="mob-sheet-handle"/>
+              <div className="mob-sheet-label">Quick Actions</div>
+              <div className="mob-quick-strip">
+                {quickActions.map(item=>(
+                  <button key={item.id} className="mob-quick-chip" onClick={()=>{item.action();setMobMenu(false)}}>
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mob-sheet-label">เมนูหลัก</div>
+              <div className="mob-sheet-grid">
+                {mainNav.filter(n=>!["dashboard","logs","log"].includes(n.id)).map(item=>(
+                  <button key={item.id} className="mob-sheet-item" onClick={()=>goPage(item.id)}>
+                    <div className="mob-sheet-icon">{item.icon}</div>
+                    <div className="mob-sheet-text">
+                      <strong>{item.label}</strong>
+                      <span>{item.badge>0?`${item.badge} รายการ`:""}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {showReport&&<ReportModal logs={logs} onClose={()=>setShowReport(false)}/>}
         {showCmd&&<CommandPalette onClose={()=>setShowCmd(false)} onAction={handleCmdAction}/>}
         {toast&&<div className="toast"><span>✦</span>{toast}</div>}
       </div>
+
+      {/* Show hamburger on mobile via inline style override */}
+      <style>{`@media(max-width:768px){.mob-hamburger{display:flex!important}}`}</style>
     </>
   )
 }

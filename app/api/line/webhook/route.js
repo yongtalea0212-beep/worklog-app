@@ -1,10 +1,5 @@
-// app/api/line/webhook/route.js
-// Architecture v2:
-// - Combined image+text into ONE worklog entry
-// - Flex Message premium UI
-// - Multi-step session state
-// - Edit/update worklogs
-// - All processing sync (prevent Vercel background kill)
+// app/api/line/webhook/route.js — WorkLog AI LINE Bot v3
+// Premium Flex Cards + Quick Reply + Postback Actions
 
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
@@ -19,758 +14,915 @@ const APP_URL       = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-vi
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const CAT_EMOJI = { graphic:'🎨',video:'🎬',photo:'📷',marketing:'📢',ai:'🤖',branding:'✨',pos:'🏪',other:'📌' }
-const CAT_COLOR = { graphic:'#6C63FF',video:'#06B6D4',photo:'#F59E0B',marketing:'#EF4444',ai:'#8B5CF6',branding:'#EC4899',pos:'#10B981',other:'#64748B' }
+// WorkLog AI Brand Colors
+const BRAND = {
+  purple:     '#6C63FF',
+  purpleLight:'#9B8FFF',
+  purpleBg:   '#F0EEFF',
+  cyan:       '#06B6D4',
+  green:      '#10B981',
+  amber:      '#F59E0B',
+  red:        '#EF4444',
+  pink:       '#EC4899',
+  text:       '#1a1a2e',
+  textSub:    '#6b7099',
+  textMuted:  '#9ca3af',
+  cardBg:     '#FAFBFF',
+  white:      '#FFFFFF',
+}
+
+const CAT = {
+  graphic:   { label:'Graphic Design', emoji:'🎨', color:'#6C63FF', bg:'#F0EEFF' },
+  video:     { label:'Video Editing',  emoji:'🎬', color:'#06B6D4', bg:'#E0F9FF' },
+  photo:     { label:'Photography',    emoji:'📷', color:'#F59E0B', bg:'#FFF8E0' },
+  marketing: { label:'Marketing',      emoji:'📢', color:'#EF4444', bg:'#FFF0F0' },
+  ai:        { label:'AI Content',     emoji:'🤖', color:'#8B5CF6', bg:'#F3EEFF' },
+  branding:  { label:'Branding',       emoji:'✨', color:'#EC4899', bg:'#FFF0F8' },
+  pos:       { label:'POS Design',     emoji:'🏪', color:'#10B981', bg:'#E8FFF5' },
+  other:     { label:'อื่นๆ',          emoji:'📌', color:'#64748B', bg:'#F1F5F9' },
+}
 
 // ─────────────────────────────────────────
-// SESSION STORE — in-memory (per function instance)
-// For production: use Supabase table
+// SESSION (in-memory — Vercel serverless)
 // ─────────────────────────────────────────
 const sessions = new Map()
-
-function getSession(userId) {
-  return sessions.get(userId) || { state: 'idle', data: {} }
-}
-function setSession(userId, state, data = {}) {
-  sessions.set(userId, { state, data, updatedAt: Date.now() })
-}
-function clearSession(userId) {
-  sessions.delete(userId)
-}
+function getSession(uid) { return sessions.get(uid) || { state:'idle', data:{} } }
+function setSession(uid, state, data={}) { sessions.set(uid, { state, data, t:Date.now() }) }
+function clearSession(uid) { sessions.delete(uid) }
 
 // ─────────────────────────────────────────
 // SIGNATURE
 // ─────────────────────────────────────────
-function verifySignature(body, sig) {
+function verifySig(body, sig) {
   if (!LINE_SECRET) return true
-  try {
-    return crypto.createHmac('SHA256', LINE_SECRET).update(body).digest('base64') === sig
-  } catch { return false }
+  try { return crypto.createHmac('SHA256',LINE_SECRET).update(body).digest('base64') === sig }
+  catch { return false }
 }
 
 // ─────────────────────────────────────────
 // LINE API
 // ─────────────────────────────────────────
-async function replyLINE(replyToken, messages) {
-  if (!LINE_TOKEN || !replyToken) return false
+async function replyLINE(token, messages) {
+  if (!LINE_TOKEN||!token) return false
   try {
-    const res = await fetch('https://api.line.me/v2/bot/message/reply', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+LINE_TOKEN },
-      body: JSON.stringify({ replyToken, messages }),
+    const r = await fetch('https://api.line.me/v2/bot/message/reply',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+LINE_TOKEN},
+      body: JSON.stringify({ replyToken:token, messages }),
     })
-    const j = await res.json()
-    if (!res.ok) { console.error('[REPLY]', res.status, j); return false }
+    const j = await r.json()
+    if (!r.ok) { console.error('[REPLY]',r.status,j); return false }
     return true
-  } catch(e) { console.error('[REPLY]', e); return false }
+  } catch(e){ console.error('[REPLY]',e); return false }
 }
 
-async function getLineContent(messageId) {
+async function getContent(msgId) {
   if (!LINE_TOKEN) return null
   try {
-    const res = await fetch('https://api-data.line.me/v2/bot/message/'+messageId+'/content', {
-      headers: { 'Authorization':'Bearer '+LINE_TOKEN }
+    const r = await fetch('https://api-data.line.me/v2/bot/message/'+msgId+'/content',{
+      headers:{'Authorization':'Bearer '+LINE_TOKEN}
     })
-    if (!res.ok) return null
-    return Buffer.from(await res.arrayBuffer())
+    if (!r.ok) return null
+    return Buffer.from(await r.arrayBuffer())
   } catch { return null }
 }
 
 // ─────────────────────────────────────────
 // SUPABASE
 // ─────────────────────────────────────────
-async function uploadImage(buffer, messageId) {
-  const path = 'line/'+Date.now()+'_'+messageId+'.jpg'
+async function uploadImg(buf, id) {
+  const path='line/'+Date.now()+'_'+id+'.jpg'
   try {
-    const { error } = await supabase.storage.from('worklog-gallery')
-      .upload(path, buffer, { contentType:'image/jpeg', cacheControl:'3600', upsert:false })
-    if (error) { console.error('[UPLOAD]', error.message); return null }
+    const {error}=await supabase.storage.from('worklog-gallery').upload(path,buf,{contentType:'image/jpeg',cacheControl:'3600',upsert:false})
+    if (error){ console.error('[UP]',error.message); return null }
     return supabase.storage.from('worklog-gallery').getPublicUrl(path).data.publicUrl
-  } catch(e) { console.error('[UPLOAD]', e); return null }
+  } catch(e){ console.error('[UP]',e); return null }
 }
 
-async function saveWorklog(userId, data) {
-  const today = new Date().toISOString().split('T')[0]
+async function saveWorklog(uid, d) {
   try {
-    const { data: saved, error } = await supabase.from('work_logs').insert({
-      line_user_id: userId,
-      title:        data.title    || 'งานจาก LINE',
-      description:  data.desc     || '',
-      ai_summary:   data.summary  || '',
-      category:     data.category || 'other',
-      hours_spent:  data.hours    || 1,
-      status:       'done',
-      tags:         data.tags     || [],
-      date:         data.date     || today,
-      image_urls:   data.images   || [],
-      source:       'line',
+    const {data,error}=await supabase.from('work_logs').insert({
+      line_user_id:uid, title:d.title||'งานจาก LINE', description:d.desc||'',
+      ai_summary:d.summary||'', category:d.category||'other', hours_spent:d.hours||1,
+      status:'done', tags:d.tags||[], date:new Date().toISOString().split('T')[0],
+      image_urls:d.images||[], source:'line',
     }).select()
-    if (error) { console.error('[SAVE]', error.message); return null }
-    return saved?.[0] || null
-  } catch(e) { console.error('[SAVE]', e); return null }
+    if (error){ console.error('[SAVE]',error.message); return null }
+    return data?.[0]||null
+  } catch(e){ console.error('[SAVE]',e); return null }
 }
 
-async function updateWorklog(id, data) {
-  try {
-    const { error } = await supabase.from('work_logs').update({
-      title:        data.title,
-      description:  data.desc,
-      ai_summary:   data.summary,
-      category:     data.category,
-      hours_spent:  data.hours,
-      tags:         data.tags,
-      image_urls:   data.images,
-    }).eq('id', id)
-    if (error) { console.error('[UPDATE]', error.message); return false }
-    return true
-  } catch(e) { console.error('[UPDATE]', e); return false }
+async function updateWorklog(id, d) {
+  const update={}
+  if (d.title!==undefined)    update.title=d.title
+  if (d.desc!==undefined)     update.description=d.desc
+  if (d.summary!==undefined)  update.ai_summary=d.summary
+  if (d.category!==undefined) update.category=d.category
+  if (d.hours!==undefined)    update.hours_spent=d.hours
+  if (d.tags!==undefined)     update.tags=d.tags
+  if (d.images!==undefined)   update.image_urls=d.images
+  const {error}=await supabase.from('work_logs').update(update).eq('id',id)
+  return !error
 }
 
-async function getRecentWorklogs(userId, limit = 5) {
-  const { data } = await supabase.from('work_logs')
-    .select('id,title,category,hours_spent,date,image_urls')
-    .eq('line_user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  return data || []
+async function getWorklog(id) {
+  const {data}=await supabase.from('work_logs').select('*').eq('id',id).single()
+  return data
+}
+
+async function getTodayLogs(uid) {
+  const today=new Date().toISOString().split('T')[0]
+  const {data}=await supabase.from('work_logs').select('id,title,category,hours_spent,date')
+    .eq('line_user_id',uid).eq('date',today).limit(20)
+  return data||[]
+}
+
+async function getMonthLogs(uid) {
+  const fd=new Date(); fd.setDate(1)
+  const {data}=await supabase.from('work_logs').select('hours_spent,category')
+    .eq('line_user_id',uid).gte('date',fd.toISOString().split('T')[0])
+  return data||[]
+}
+
+async function getRecentLogs(uid, n=5) {
+  const {data}=await supabase.from('work_logs').select('id,title,category,hours_spent,date,image_urls')
+    .eq('line_user_id',uid).order('created_at',{ascending:false}).limit(n)
+  return data||[]
 }
 
 // ─────────────────────────────────────────
-// CLAUDE AI
+// CLAUDE
 // ─────────────────────────────────────────
-async function callClaude(prompt) {
+async function callAI(prompt) {
   if (!ANTHROPIC_KEY) return ''
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 10000)
+  const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),10000)
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type':'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version':'2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{ role:'user', content: prompt }],
-      }),
-      signal: ctrl.signal,
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:500,messages:[{role:'user',content:prompt}]}),
+      signal:ctrl.signal,
     })
-    clearTimeout(timer)
-    if (!res.ok) { const e = await res.json().catch(()=>({})); console.error('[AI]', res.status, e); return '' }
-    return (await res.json()).content?.[0]?.text || ''
-  } catch(e) { clearTimeout(timer); console.error('[AI]', e.name==='AbortError'?'TIMEOUT':e); return '' }
+    clearTimeout(t)
+    if (!r.ok){ const e=await r.json().catch(()=>({})); console.error('[AI]',r.status,e); return '' }
+    return (await r.json()).content?.[0]?.text||''
+  } catch(e){ clearTimeout(t); console.error('[AI]',e.name==='AbortError'?'TIMEOUT':e); return '' }
 }
 
-async function analyzeWorklog(title, desc, category) {
-  const prompt = 'วิเคราะห์งานนี้แล้วตอบ JSON เท่านั้น ไม่มี markdown:\nชื่องาน: "'+title+'"\nรายละเอียด: "'+desc+'"\nหมวด: '+category+'\n\n{"summary":"สรุปงาน 1-2 ประโยค ภาษาไทยระดับมืออาชีพ","tags":["tag1","tag2","tag3"],"hours":2,"refined_title":"ชื่องานที่กระชับและชัดเจน"}'
+async function analyze(title, desc) {
+  const p='วิเคราะห์งานนี้ตอบ JSON เท่านั้น ไม่มี markdown:\nชื่อ:"'+title+'"\nรายละเอียด:"'+desc+'"\n\n{"summary":"สรุป 1-2 ประโยคมืออาชีพ","category":"graphic|video|photo|marketing|ai|branding|pos|other","hours":1,"tags":["tag1","tag2"],"refined_title":"ชื่อกระชับ"}'
   try {
-    const txt = await callClaude(prompt)
+    const txt=await callAI(p)
     if (!txt) throw new Error('empty')
-    const s=txt.indexOf('{'), e=txt.lastIndexOf('}')
+    const s=txt.indexOf('{'),e=txt.lastIndexOf('}')
     if (s===-1||e===-1) throw new Error('no json')
     return JSON.parse(txt.slice(s,e+1))
-  } catch(err) {
-    return { summary:desc, tags:[], hours:1, refined_title:title }
-  }
+  } catch { return {summary:desc,category:'other',hours:1,tags:[],refined_title:title.slice(0,60)} }
 }
 
 // ─────────────────────────────────────────
-// FLEX MESSAGES
+// FLEX MESSAGE BUILDERS — WorkLog AI Style
 // ─────────────────────────────────────────
 
-// Card asking user to describe work (after image upload)
-function flexAskDescription(imageUrl) {
-  return {
+// 1. Image received card with Quick Reply
+function msgImageReceived(imgUrl) {
+  const messages = []
+
+  // Flex Card — "รับรูปแล้ว"
+  messages.push({
     type: 'flex',
-    altText: '📸 รูปได้รับแล้ว — บอกรายละเอียดงานด้วย',
+    altText: '📸 รับรูปแล้ว! — บอก AI ว่าทำงานอะไร',
     contents: {
       type: 'bubble',
       size: 'mega',
-      hero: imageUrl ? {
+      // Hero = image preview
+      hero: {
         type: 'image',
-        url: imageUrl,
+        url: imgUrl || 'https://via.placeholder.com/800x400/6C63FF/FFFFFF?text=WorkLog+AI',
         size: 'full',
         aspectRatio: '20:13',
         aspectMode: 'cover',
-      } : undefined,
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'md',
-        paddingAll: '20px',
-        contents: [
-          {
-            type: 'box', layout: 'horizontal', spacing: 'sm',
-            contents: [
-              { type:'text', text:'📸', size:'xl', flex:0 },
-              { type:'text', text:'รับรูปแล้ว!', weight:'bold', size:'lg', color:'#1a1a2e', flex:1 },
-            ]
-          },
-          { type:'separator', margin:'md' },
-          {
-            type: 'text',
-            text: 'บอก AI ว่าทำงานอะไรในรูปนี้ เพื่อบันทึกเป็น Worklog',
-            wrap: true, size:'sm', color:'#6b7099', margin:'md',
-          },
-          {
-            type: 'text',
-            text: '💬 พิมพ์รายละเอียดงาน เช่น:\n"ออกแบบโปสเตอร์ POS ร้านกาแฟ"',
-            wrap: true, size:'sm', color:'#9ca3af', margin:'sm',
-          },
-        ]
+        action: { type:'uri', uri: APP_URL },
       },
-      footer: {
-        type: 'box', layout: 'vertical', spacing: 'sm', paddingAll:'12px',
-        contents: [
-          {
-            type: 'button', style: 'primary', height: 'sm',
-            color: '#6C63FF',
-            action: { type:'message', label:'⏭ ข้ามไม่ใส่รายละเอียด', text:'/skip' },
-          }
-        ]
-      },
-      styles: { body:{ backgroundColor:'#FAFBFF' }, footer:{ backgroundColor:'#F5F6FF' } }
-    }
-  }
-}
-
-// Beautiful worklog summary card
-function flexWorklogCard(data, saved) {
-  const cat     = data.category || 'other'
-  const emoji   = CAT_EMOJI[cat] || '📌'
-  const color   = CAT_COLOR[cat] || '#6C63FF'
-  const tags    = (data.tags||[]).slice(0,4)
-  const hasImg  = data.images?.[0]
-
-  return {
-    type: 'flex',
-    altText: '✅ บันทึกงานแล้ว: ' + data.title,
-    contents: {
-      type: 'bubble',
-      size: 'mega',
-      hero: hasImg ? {
-        type: 'image',
-        url: data.images[0],
-        size: 'full',
-        aspectRatio: '20:13',
-        aspectMode: 'cover',
-      } : undefined,
+      // Header
       header: {
-        type: 'box',
-        layout: 'vertical',
-        paddingAll: '16px',
-        backgroundColor: color + '18',
+        type: 'box', layout: 'horizontal', paddingAll: '16px',
+        backgroundColor: BRAND.purpleBg,
         contents: [
           {
-            type: 'box', layout: 'horizontal', spacing: 'sm',
+            type: 'box', layout: 'vertical', flex: 1,
             contents: [
-              { type:'text', text:emoji+' '+cat.toUpperCase(), size:'xs', color:color, weight:'bold', flex:1 },
-              { type:'text', text:'✅ บันทึกแล้ว', size:'xs', color:'#10B981', align:'end' },
+              {
+                type: 'box', layout: 'horizontal', spacing: 'sm',
+                contents: [
+                  { type:'text', text:'📸', size:'sm', flex:0 },
+                  { type:'text', text:'รับรูปแล้ว!', weight:'bold', size:'md', color:BRAND.purple, flex:1 },
+                ]
+              },
+              { type:'text', text:'บอก AI ว่าทำงานอะไรในรูปนี้', size:'xs', color:BRAND.textMuted, margin:'xs' },
             ]
           },
           {
-            type: 'text', text: data.title, weight: 'bold', size:'lg',
-            color:'#1a1a2e', wrap:true, margin:'sm',
+            type: 'box', layout: 'vertical', flex: 0, justifyContent:'center',
+            contents:[{ type:'text', text:'✨', size:'xl' }]
           }
         ]
       },
+      // Body
       body: {
-        type: 'box', layout:'vertical', spacing:'sm', paddingAll:'16px',
+        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
+        backgroundColor: BRAND.cardBg,
         contents: [
-          // Stats row
           {
-            type:'box', layout:'horizontal', spacing:'md',
+            type: 'box', layout: 'vertical',
+            backgroundColor: BRAND.white,
+            cornerRadius: '12px', paddingAll: '14px',
+            borderColor: '#E8E0FF', borderWidth: '1px',
             contents: [
-              {
-                type:'box', layout:'vertical', flex:1,
-                backgroundColor:'#F8F9FF', cornerRadius:'8px', paddingAll:'10px',
-                contents:[
-                  { type:'text', text:'⏱', size:'sm', align:'center' },
-                  { type:'text', text:String(data.hours||1)+' ชม.', size:'sm', weight:'bold', color:color, align:'center' },
-                ]
-              },
-              {
-                type:'box', layout:'vertical', flex:1,
-                backgroundColor:'#F8F9FF', cornerRadius:'8px', paddingAll:'10px',
-                contents:[
-                  { type:'text', text:'📂', size:'sm', align:'center' },
-                  { type:'text', text:cat, size:'xs', weight:'bold', color:color, align:'center', wrap:true },
-                ]
-              },
-              {
-                type:'box', layout:'vertical', flex:1,
-                backgroundColor:'#F8F9FF', cornerRadius:'8px', paddingAll:'10px',
-                contents:[
-                  { type:'text', text:'🖼', size:'sm', align:'center' },
-                  { type:'text', text:String((data.images||[]).length)+' รูป', size:'sm', weight:'bold', color:color, align:'center' },
-                ]
-              },
+              { type:'text', text:'💬 พิมพ์รายละเอียดงาน', size:'sm', weight:'bold', color:BRAND.text },
+              { type:'text', text:'เช่น: "ออกแบบโปสเตอร์ POS ร้านกาแฟ"', size:'xs', color:BRAND.textMuted, margin:'sm', wrap:true },
             ]
           },
-          // Summary
-          data.summary ? {
-            type:'box', layout:'vertical', margin:'md',
-            backgroundColor:'#F0F4FF', cornerRadius:'8px', paddingAll:'12px',
-            contents:[
-              { type:'text', text:'✨ AI Summary', size:'xs', color:'#6C63FF', weight:'bold', margin:'none' },
-              { type:'text', text:data.summary, size:'sm', color:'#4a5568', wrap:true, margin:'sm' },
-            ]
-          } : null,
-          // Tags
-          tags.length > 0 ? {
-            type:'box', layout:'horizontal', spacing:'sm', margin:'md', wrap:true,
-            contents: tags.map(t=>({
-              type:'box', layout:'vertical',
-              backgroundColor:color+'18', cornerRadius:'20px', paddingAll:'4px',
-              paddingStart:'10px', paddingEnd:'10px',
-              contents:[{ type:'text', text:'#'+t, size:'xs', color:color }]
-            }))
-          } : null,
-        ].filter(Boolean)
+          {
+            type:'text', text:'หรือกดปุ่มด้านล่างเพื่อข้าม',
+            size:'xs', color:BRAND.textMuted, align:'center',
+          }
+        ]
       },
+      // Footer
       footer: {
-        type:'box', layout:'vertical', spacing:'sm', paddingAll:'12px',
-        contents: [
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm',
+        backgroundColor: BRAND.cardBg,
+        contents:[{
+          type:'button',
+          style:'secondary',
+          height:'sm',
+          action:{ type:'message', label:'⏭️ ข้ามไม่ใส่รายละเอียด', text:'/skip' },
+          color:'#E8E0FF',
+        }]
+      },
+      styles:{
+        header:{ separator:false },
+        footer:{ separator:true, separatorColor:'#E8E0FF' }
+      }
+    }
+  })
+
+  return messages
+}
+
+// 2. Worklog Summary Card (after save)
+function msgWorklogSaved(d, saved) {
+  const cat     = CAT[d.category] || CAT.other
+  const tags    = (d.tags||[]).slice(0,4)
+  const imgUrl  = d.images?.[0]
+  const logId   = saved?.id || ''
+
+  const tagBoxes = tags.map(t=>({
+    type:'box', layout:'vertical', cornerRadius:'20px',
+    paddingAll:'4px', paddingStart:'10px', paddingEnd:'10px',
+    backgroundColor: cat.bg,
+    contents:[{ type:'text', text:'#'+t, size:'xs', color:cat.color, weight:'bold' }]
+  }))
+
+  return [{
+    type: 'flex',
+    altText: '✅ บันทึกงานแล้ว: '+d.title,
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+
+      // Hero image (if any)
+      ...(imgUrl ? {
+        hero: {
+          type:'image', url:imgUrl, size:'full',
+          aspectRatio:'20:11', aspectMode:'cover',
+          action:{ type:'uri', uri:APP_URL },
+        }
+      } : {}),
+
+      // Header — category badge + title
+      header: {
+        type:'box', layout:'vertical', paddingAll:'16px',
+        backgroundColor: cat.bg,
+        contents:[
           {
             type:'box', layout:'horizontal', spacing:'sm',
-            contents: [
+            contents:[
+              { type:'text', text:cat.emoji, size:'sm', flex:0 },
+              { type:'text', text:cat.label.toUpperCase(), size:'xs', color:cat.color, weight:'bold', flex:1 },
               {
-                type:'button', style:'secondary', height:'sm', flex:1,
-                action:{ type:'message', label:'✏️ แก้ไข', text:'/edit '+(saved?.id||'') }
+                type:'box', layout:'vertical', cornerRadius:'20px',
+                paddingAll:'3px', paddingStart:'10px', paddingEnd:'10px',
+                backgroundColor: BRAND.green,
+                contents:[{ type:'text', text:'✅ บันทึกแล้ว', size:'xs', color:BRAND.white, weight:'bold' }]
+              }
+            ]
+          },
+          { type:'text', text:d.title, weight:'bold', size:'lg', color:BRAND.text, wrap:true, margin:'sm' },
+        ]
+      },
+
+      // Body — stats + summary + tags
+      body: {
+        type:'box', layout:'vertical', paddingAll:'16px', spacing:'md',
+        backgroundColor: BRAND.cardBg,
+        contents:[
+
+          // Stats row
+          {
+            type:'box', layout:'horizontal', spacing:'sm',
+            contents:[
+              {
+                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
+                paddingAll:'10px', backgroundColor:BRAND.white,
+                borderColor:'#E8E0FF', borderWidth:'1px',
+                contents:[
+                  { type:'text', text:'⏱', size:'sm', align:'center' },
+                  { type:'text', text:String(d.hours||1)+' ชม.', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
+                ]
               },
               {
-                type:'button', style:'primary', height:'sm', flex:1, color:'#6C63FF',
-                action:{ type:'uri', label:'🌐 ดูใน App', uri: APP_URL }
+                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
+                paddingAll:'10px', backgroundColor:BRAND.white,
+                borderColor:'#E8E0FF', borderWidth:'1px',
+                contents:[
+                  { type:'text', text:'📂', size:'sm', align:'center' },
+                  { type:'text', text:cat.label, size:'xs', weight:'bold', color:cat.color, align:'center', margin:'xs', wrap:true },
+                ]
+              },
+              {
+                type:'box', layout:'vertical', flex:1, cornerRadius:'10px',
+                paddingAll:'10px', backgroundColor:BRAND.white,
+                borderColor:'#E8E0FF', borderWidth:'1px',
+                contents:[
+                  { type:'text', text:'🖼', size:'sm', align:'center' },
+                  { type:'text', text:String((d.images||[]).length)+' รูป', size:'sm', weight:'bold', color:cat.color, align:'center', margin:'xs' },
+                ]
               },
             ]
           },
+
+          // AI Summary box
+          ...(d.summary ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px',
+            paddingAll:'12px', backgroundColor:BRAND.purpleBg,
+            borderColor:'#D8D0FF', borderWidth:'1px',
+            contents:[
+              { type:'box', layout:'horizontal', spacing:'sm', contents:[
+                { type:'text', text:'✨', size:'xs', flex:0 },
+                { type:'text', text:'AI Summary', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
+              ]},
+              { type:'text', text:d.summary, size:'sm', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+
+          // Tags
+          ...(tags.length > 0 ? [{
+            type:'box', layout:'horizontal', spacing:'xs', wrap:true,
+            contents: tagBoxes,
+          }] : []),
+
+          // Date
+          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH'), size:'xs', color:BRAND.textMuted },
+        ]
+      },
+
+      // Footer — action buttons
+      footer: {
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm',
+        backgroundColor: BRAND.cardBg,
+        contents:[
+          // Row 1 — edit + add image
           {
-            type:'button', style:'secondary', height:'sm',
-            action:{ type:'message', label:'📸 เพิ่มรูปอีก', text:'/addimage '+(saved?.id||'') }
+            type:'box', layout:'horizontal', spacing:'sm',
+            contents:[
+              {
+                type:'button', style:'secondary', height:'sm', flex:1,
+                action:{ type:'message', label:'✏️ แก้ไข', text:'/edit '+logId },
+                color:'#E8E0FF',
+              },
+              {
+                type:'button', style:'secondary', height:'sm', flex:1,
+                action:{ type:'message', label:'📸 เพิ่มรูป', text:'/addimage '+logId },
+                color:'#E8E0FF',
+              },
+            ]
+          },
+          // Row 2 — view in app
+          {
+            type:'button', style:'primary', height:'sm',
+            color: BRAND.purple,
+            action:{ type:'uri', label:'🌐 ดูใน WorkLog AI', uri:APP_URL },
           },
         ]
       },
-      styles: { body:{ backgroundColor:'#FAFBFF' }, footer:{ backgroundColor:'#F5F6FF' } }
+      styles:{
+        header:{ separator:false },
+        footer:{ separator:true, separatorColor:'#E8E0FF' }
+      }
     }
-  }
+  }]
 }
 
-// Recent worklogs card
-function flexRecentLogs(logs) {
-  if (!logs.length) return { type:'text', text:'ยังไม่มีงานที่บันทึก 📋' }
-  return {
-    type: 'flex',
-    altText: '📊 งานล่าสุด '+logs.length+' รายการ',
-    contents: {
-      type: 'carousel',
-      contents: logs.slice(0,5).map(log => {
-        const cat  = log.category||'other'
-        const color= CAT_COLOR[cat]||'#6C63FF'
-        const emoji= CAT_EMOJI[cat]||'📌'
-        return {
-          type:'bubble', size:'kilo',
-          header:{
-            type:'box', layout:'vertical', paddingAll:'12px',
-            backgroundColor: color+'22',
-            contents:[
-              { type:'text', text:emoji+' '+cat.toUpperCase(), size:'xs', color:color, weight:'bold' },
-              { type:'text', text:log.title||'งาน', size:'sm', weight:'bold', color:'#1a1a2e', wrap:true, margin:'sm' },
-            ]
-          },
-          body:{
-            type:'box', layout:'vertical', spacing:'xs', paddingAll:'12px',
-            contents:[
-              { type:'text', text:'⏱ '+(log.hours_spent||1)+' ชม. · 📅 '+log.date, size:'xs', color:'#9ca3af' },
-            ]
-          },
-          footer:{
-            type:'box', layout:'vertical', paddingAll:'8px',
-            contents:[{
-              type:'button', style:'primary', height:'sm', color:color,
-              action:{ type:'message', label:'แก้ไข', text:'/edit '+log.id }
-            }]
-          }
-        }
-      })
-    }
-  }
-}
-
-// Edit prompt card
-function flexEditPrompt(worklogId) {
-  return {
-    type:'flex', altText:'✏️ แก้ไขงาน',
+// 3. Edit menu card
+function msgEditMenu(log) {
+  const cat = CAT[log.category||'other']||CAT.other
+  return [{
+    type:'flex',
+    altText:'✏️ แก้ไขงาน: '+log.title,
     contents:{
       type:'bubble', size:'mega',
-      body:{
-        type:'box', layout:'vertical', spacing:'md', paddingAll:'20px',
+      header:{
+        type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:cat.bg,
         contents:[
-          { type:'text', text:'✏️ แก้ไขงาน', weight:'bold', size:'lg', color:'#1a1a2e' },
-          { type:'separator', margin:'md' },
-          { type:'text', text:'เลือกสิ่งที่ต้องการแก้ไข:', size:'sm', color:'#6b7099', margin:'md' },
+          { type:'text', text:'✏️ แก้ไขงาน', weight:'bold', size:'md', color:cat.color },
+          { type:'text', text:log.title||'', size:'sm', color:BRAND.textSub, wrap:true, margin:'xs' },
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm',
+        backgroundColor:BRAND.cardBg,
+        contents:[
+          // Current info
+          {
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px',
+            backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+            contents:[
+              { type:'box', layout:'horizontal', contents:[
+                { type:'text', text:'⏱ เวลา', size:'xs', color:BRAND.textMuted, flex:1 },
+                { type:'text', text:String(log.hours_spent||1)+' ชม.', size:'xs', weight:'bold', color:BRAND.purple, flex:0 },
+              ]},
+              { type:'separator', margin:'sm' },
+              { type:'box', layout:'horizontal', margin:'sm', contents:[
+                { type:'text', text:'📂 หมวด', size:'xs', color:BRAND.textMuted, flex:1 },
+                { type:'text', text:cat.emoji+' '+cat.label, size:'xs', weight:'bold', color:cat.color, flex:0 },
+              ]},
+              ...(log.ai_summary ? [
+                { type:'separator', margin:'sm' },
+                { type:'text', text:log.ai_summary, size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' },
+              ] : []),
+            ]
+          }
         ]
       },
       footer:{
-        type:'box', layout:'vertical', spacing:'sm', paddingAll:'12px',
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm',
+        backgroundColor:BRAND.cardBg,
         contents:[
           {
             type:'box', layout:'horizontal', spacing:'sm',
             contents:[
-              { type:'button', style:'secondary', height:'sm', flex:1, action:{ type:'message', label:'📝 ชื่องาน', text:'/edit-title '+worklogId } },
-              { type:'button', style:'secondary', height:'sm', flex:1, action:{ type:'message', label:'📄 รายละเอียด', text:'/edit-desc '+worklogId } },
+              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+                action:{ type:'message', label:'📝 ชื่องาน', text:'/edit-title '+log.id } },
+              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+                action:{ type:'message', label:'📄 รายละเอียด', text:'/edit-desc '+log.id } },
             ]
           },
           {
             type:'box', layout:'horizontal', spacing:'sm',
             contents:[
-              { type:'button', style:'secondary', height:'sm', flex:1, action:{ type:'message', label:'⏱ ชั่วโมง', text:'/edit-hours '+worklogId } },
-              { type:'button', style:'secondary', height:'sm', flex:1, action:{ type:'message', label:'📂 หมวดหมู่', text:'/edit-cat '+worklogId } },
+              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+                action:{ type:'message', label:'⏱ เวลา', text:'/edit-hours '+log.id } },
+              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+                action:{ type:'message', label:'📂 หมวด', text:'/edit-cat '+log.id } },
             ]
           },
-          { type:'button', style:'primary', height:'sm', color:'#6C63FF', action:{ type:'uri', label:'🌐 แก้ไขในแอป', uri: APP_URL } },
+          { type:'button', style:'primary', height:'sm', color:BRAND.purple,
+            action:{ type:'uri', label:'🌐 แก้ไขในแอป', uri:APP_URL } },
         ]
-      }
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
     }
+  }]
+}
+
+// 4. Quick Reply for category selection
+function qrCategories(prefix, id) {
+  return {
+    items: Object.entries(CAT).map(([k,v])=>({
+      type:'action',
+      imageUrl:`https://via.placeholder.com/40/FFFFFF/000000?text=${encodeURIComponent(v.emoji)}`,
+      action:{ type:'message', label:v.emoji+' '+v.label, text:prefix+' '+id+' '+k }
+    }))
   }
+}
+
+// 5. Today summary card
+function msgToday(logs, date) {
+  const total = logs.reduce((s,l)=>s+(l.hours_spent||0),0)
+  const byCat = logs.reduce((a,l)=>{ const c=l.category||'other'; a[c]=(a[c]||0)+(l.hours_spent||0); return a },{})
+  const catRows = Object.entries(byCat).map(([c,h])=>{
+    const cat=CAT[c]||CAT.other
+    const pct=Math.round(h/Math.max(total,1)*100)
+    return {
+      type:'box', layout:'vertical', margin:'xs',
+      contents:[
+        { type:'box', layout:'horizontal', contents:[
+          { type:'text', text:cat.emoji+' '+cat.label, size:'xs', color:BRAND.text, flex:1 },
+          { type:'text', text:h+'h', size:'xs', weight:'bold', color:cat.color, flex:0 },
+        ]},
+        { type:'box', layout:'horizontal', margin:'xs', contents:[
+          { type:'box', layout:'vertical', flex:pct, height:'4px', backgroundColor:cat.color, cornerRadius:'2px' },
+          ...(pct<100?[{ type:'box', layout:'vertical', flex:100-pct, height:'4px', backgroundColor:'#E8E0FF', cornerRadius:'2px' }]:[]),
+        ]}
+      ]
+    }
+  })
+  return [{
+    type:'flex', altText:'📊 วันนี้ '+date+' · '+logs.length+' งาน',
+    contents:{
+      type:'bubble', size:'mega',
+      header:{
+        type:'box', layout:'horizontal', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
+        contents:[
+          { type:'box', layout:'vertical', flex:1, contents:[
+            { type:'text', text:'📊 วันนี้', weight:'bold', size:'md', color:BRAND.purple },
+            { type:'text', text:date, size:'xs', color:BRAND.textMuted, margin:'xs' },
+          ]},
+          { type:'box', layout:'vertical', flex:0, justifyContent:'center',
+            cornerRadius:'20px', paddingAll:'6px', paddingStart:'14px', paddingEnd:'14px',
+            backgroundColor:BRAND.purple,
+            contents:[{ type:'text', text:String(total)+' ชม.', size:'sm', weight:'bold', color:BRAND.white }]
+          }
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'16px', spacing:'md',
+        backgroundColor:BRAND.cardBg,
+        contents:[
+          // Stats
+          {
+            type:'box', layout:'horizontal', spacing:'sm',
+            contents:[
+              { type:'box', layout:'vertical', flex:1, cornerRadius:'10px', paddingAll:'10px',
+                backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+                contents:[
+                  { type:'text', text:'✅', size:'md', align:'center' },
+                  { type:'text', text:String(logs.length)+' งาน', size:'sm', weight:'bold', color:BRAND.purple, align:'center', margin:'xs' },
+                ]
+              },
+              { type:'box', layout:'vertical', flex:1, cornerRadius:'10px', paddingAll:'10px',
+                backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+                contents:[
+                  { type:'text', text:'⏱', size:'md', align:'center' },
+                  { type:'text', text:String(total)+' ชม.', size:'sm', weight:'bold', color:BRAND.cyan, align:'center', margin:'xs' },
+                ]
+              },
+            ]
+          },
+          // Category breakdown
+          ...(catRows.length>0?[{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px',
+            backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+            contents:[
+              { type:'text', text:'หมวดหมู่วันนี้', size:'xs', color:BRAND.textMuted, weight:'bold', margin:'none' },
+              { type:'separator', margin:'sm' },
+              ...catRows,
+            ]
+          }]:[]),
+          // Work list
+          ...logs.slice(0,5).map((l,i)=>{
+            const cat=CAT[l.category||'other']||CAT.other
+            return {
+              type:'box', layout:'horizontal', spacing:'sm',
+              paddingTop: i===0?'4px':'0px',
+              contents:[
+                { type:'text', text:cat.emoji, size:'sm', flex:0 },
+                { type:'text', text:l.title||'งาน', size:'xs', color:BRAND.text, flex:1, wrap:true },
+                { type:'text', text:(l.hours_spent||1)+'h', size:'xs', color:cat.color, flex:0, weight:'bold' },
+              ]
+            }
+          }),
+        ]
+      },
+      footer:{
+        type:'box', layout:'vertical', paddingAll:'12px', backgroundColor:BRAND.cardBg,
+        contents:[{
+          type:'button', style:'primary', height:'sm', color:BRAND.purple,
+          action:{ type:'uri', label:'🌐 ดูทั้งหมดในแอป', uri:APP_URL },
+        }]
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+    }
+  }]
+}
+
+// 6. Recent logs carousel
+function msgRecentLogs(logs) {
+  if (!logs.length) return [{ type:'text', text:'ยังไม่มีงาน 📋\nส่งข้อความหรือรูปเพื่อบันทึกงาน!' }]
+  return [{
+    type:'flex', altText:'📋 งานล่าสุด '+logs.length+' รายการ',
+    contents:{
+      type:'carousel',
+      contents: logs.map(log=>{
+        const cat=CAT[log.category||'other']||CAT.other
+        const img=log.image_urls?.[0]
+        return {
+          type:'bubble', size:'kilo',
+          ...(img?{ hero:{ type:'image',url:img,size:'full',aspectRatio:'20:13',aspectMode:'cover' } }:{}),
+          header:{
+            type:'box', layout:'vertical', paddingAll:'12px', backgroundColor:cat.bg,
+            contents:[
+              { type:'box', layout:'horizontal', contents:[
+                { type:'text', text:cat.emoji, size:'xs', flex:0 },
+                { type:'text', text:cat.label, size:'xs', color:cat.color, weight:'bold', flex:1 },
+              ]},
+              { type:'text', text:log.title||'งาน', size:'sm', weight:'bold', color:BRAND.text, wrap:true, margin:'xs' },
+            ]
+          },
+          body:{
+            type:'box', layout:'horizontal', paddingAll:'10px', spacing:'sm',
+            contents:[
+              { type:'text', text:'⏱ '+(log.hours_spent||1)+'h', size:'xs', color:BRAND.textMuted, flex:1 },
+              { type:'text', text:'📅 '+log.date, size:'xs', color:BRAND.textMuted, flex:0 },
+            ]
+          },
+          footer:{
+            type:'box', layout:'horizontal', paddingAll:'8px', spacing:'sm',
+            contents:[
+              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+                action:{ type:'message', label:'✏️', text:'/edit '+log.id } },
+              { type:'button', style:'primary', height:'sm', flex:2, color:cat.color,
+                action:{ type:'uri', label:'ดูใน App', uri:APP_URL } },
+            ]
+          },
+          styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+        }
+      })
+    }
+  }]
 }
 
 // ─────────────────────────────────────────
 // COMMANDS
 // ─────────────────────────────────────────
-async function handleCommand(userId, cmd, replyToken) {
-  const parts = cmd.trim().split(' ')
-  const c = parts[0].toLowerCase()
-  const arg = parts.slice(1).join(' ')
+async function handleCmd(uid, text, token) {
+  const parts=text.trim().split(' ')
+  const cmd=parts[0].toLowerCase()
+  const arg=parts.slice(1).join(' ')
 
-  // /skip — skip description for pending image
-  if (c === '/skip') {
-    const session = getSession(userId)
-    if (session.state === 'awaiting_description' && session.data.imageUrl) {
-      const data = {
-        title: 'รูปภาพจาก LINE',
-        desc: 'รูปภาพที่อัปโหลดจาก LINE',
-        category: 'photo', hours: 1, tags: ['photo'],
-        images: [session.data.imageUrl], summary: ''
-      }
-      const saved = await saveWorklog(userId, data)
-      clearSession(userId)
-      return replyLINE(replyToken, [flexWorklogCard(data, saved)])
+  if (cmd==='/skip') {
+    const s=getSession(uid)
+    if (s.state==='awaiting_desc' && s.data.imgUrl) {
+      const d={ title:'รูปภาพจาก LINE', desc:'', summary:'', category:'photo', hours:1, tags:['photo'], images:[s.data.imgUrl] }
+      const saved=await saveWorklog(uid,d)
+      clearSession(uid)
+      return replyLINE(token, msgWorklogSaved(d, saved))
     }
-    clearSession(userId)
-    return replyLINE(replyToken, [{ type:'text', text:'ไม่มีรูปค้างอยู่ครับ' }])
+    clearSession(uid)
+    return replyLINE(token,[{type:'text',text:'ไม่มีรูปค้างอยู่ครับ'}])
   }
 
-  // /today
-  if (c === '/today') {
-    const today = new Date().toISOString().split('T')[0]
-    const { data:logs } = await supabase.from('work_logs')
-      .select('title,hours_spent,category').eq('line_user_id',userId).eq('date',today).limit(20)
-    if (!logs?.length) return replyLINE(replyToken,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nส่งข้อความหรือรูปเพื่อบันทึกงาน!'}])
-    const total=logs.reduce((s,l)=>s+(l.hours_spent||0),0)
-    const list=logs.map(l=>(CAT_EMOJI[l.category]||'📌')+' '+l.title+' ('+l.hours_spent+'h)').join('\n')
-    return replyLINE(replyToken,[{type:'text',text:'📊 วันนี้ '+today+'\n'+logs.length+' งาน · '+total+' ชม.\n\n'+list}])
+  if (cmd==='/today') {
+    const today=new Date().toISOString().split('T')[0]
+    const logs=await getTodayLogs(uid)
+    if (!logs.length) return replyLINE(token,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nส่งข้อความหรือรูปเพื่อบันทึกงาน!'}])
+    return replyLINE(token, msgToday(logs, today))
   }
 
-  // /logs — show recent worklogs as flex cards
-  if (c === '/logs') {
-    const logs = await getRecentWorklogs(userId, 5)
-    if (!logs.length) return replyLINE(replyToken,[{type:'text',text:'ยังไม่มีงาน 📋'}])
-    return replyLINE(replyToken, [flexRecentLogs(logs)])
+  if (cmd==='/logs') {
+    const logs=await getRecentLogs(uid,5)
+    return replyLINE(token, msgRecentLogs(logs))
   }
 
-  // /summary
-  if (c === '/summary') {
-    const fd=new Date(); fd.setDate(1)
-    const { data:logs } = await supabase.from('work_logs')
-      .select('hours_spent,category').eq('line_user_id',userId).gte('date',fd.toISOString().split('T')[0])
-    const total=logs?.length||0, hours=logs?.reduce((s,l)=>s+(l.hours_spent||0),0)||0
-    return replyLINE(replyToken,[{type:'text',text:'📊 เดือนนี้\n✅ '+total+' งาน\n⏱ '+hours+' ชั่วโมง\n\nดูรายงานเต็มที่แอป 👉 '+APP_URL}])
+  if (cmd==='/summary') {
+    const logs=await getMonthLogs(uid)
+    const total=logs.length, hours=logs.reduce((s,l)=>s+(l.hours_spent||0),0)
+    return replyLINE(token,[{type:'text',text:'📊 เดือนนี้\n✅ '+total+' งาน\n⏱ '+hours+' ชั่วโมง\n\n'+APP_URL}])
   }
 
-  // /edit <id> — show edit options
-  if (c === '/edit' && arg) {
-    return replyLINE(replyToken, [flexEditPrompt(arg)])
+  if (cmd==='/edit' && arg) {
+    const log=await getWorklog(arg)
+    if (!log) return replyLINE(token,[{type:'text',text:'ไม่พบงานนี้'}])
+    return replyLINE(token, msgEditMenu(log))
   }
 
-  // /edit-title <id>
-  if (c === '/edit-title' && arg) {
-    setSession(userId, 'editing_title', { worklogId: arg })
-    return replyLINE(replyToken, [{ type:'text', text:'✏️ พิมพ์ชื่องานใหม่:' }])
+  if (cmd==='/edit-title' && arg) {
+    setSession(uid,'editing_title',{id:arg})
+    return replyLINE(token,[{type:'text',text:'✏️ พิมพ์ชื่องานใหม่:'}])
+  }
+  if (cmd==='/edit-desc' && arg) {
+    setSession(uid,'editing_desc',{id:arg})
+    return replyLINE(token,[{type:'text',text:'📄 พิมพ์รายละเอียดงานใหม่:'}])
+  }
+  if (cmd==='/edit-hours' && arg) {
+    setSession(uid,'editing_hours',{id:arg})
+    return replyLINE(token,[{type:'text',text:'⏱ พิมพ์จำนวนชั่วโมง เช่น: 2.5'}])
+  }
+  if (cmd==='/edit-cat' && arg) {
+    setSession(uid,'editing_cat',{id:arg})
+    // Quick Reply with category buttons
+    return replyLINE(token,[{
+      type:'text', text:'📂 เลือกหมวดหมู่:',
+      quickReply: qrCategories('/set-cat', arg)
+    }])
+  }
+  if (cmd==='/set-cat') {
+    const parts2=arg.split(' '), id=parts2[0], cat=parts2[1]
+    if (!CAT[cat]) return replyLINE(token,[{type:'text',text:'หมวดไม่ถูกต้อง'}])
+    await updateWorklog(id,{category:cat})
+    clearSession(uid)
+    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนหมวดเป็น '+(CAT[cat].emoji)+' '+(CAT[cat].label)+' แล้ว'}])
   }
 
-  // /edit-desc <id>
-  if (c === '/edit-desc' && arg) {
-    setSession(userId, 'editing_desc', { worklogId: arg })
-    return replyLINE(replyToken, [{ type:'text', text:'✏️ พิมพ์รายละเอียดงานใหม่:' }])
+  if (cmd==='/addimage' && arg) {
+    setSession(uid,'adding_img',{id:arg})
+    return replyLINE(token,[{type:'text',text:'📸 ส่งรูปที่ต้องการเพิ่ม:'}])
   }
 
-  // /edit-hours <id>
-  if (c === '/edit-hours' && arg) {
-    setSession(userId, 'editing_hours', { worklogId: arg })
-    return replyLINE(replyToken, [{ type:'text', text:'⏱ พิมพ์จำนวนชั่วโมง เช่น: 2.5' }])
+  if (cmd==='/timer') {
+    if (arg==='start') {
+      await supabase.from('line_timers').upsert({line_user_id:uid,started_at:new Date().toISOString(),active:true})
+      return replyLINE(token,[{type:'text',text:'⏱ เริ่มจับเวลาแล้ว!\nส่ง /timer stop เมื่อเสร็จ'}])
+    }
+    if (arg==='stop') {
+      const {data:t2}=await supabase.from('line_timers').select('*').eq('line_user_id',uid).eq('active',true).single()
+      if (t2) {
+        const min=Math.round((Date.now()-new Date(t2.started_at).getTime())/60000)
+        await supabase.from('line_timers').update({active:false}).eq('id',t2.id)
+        return replyLINE(token,[{type:'text',text:'⏱ หยุดแล้ว · '+min+' นาที ('+Math.round(min/6)/10+' ชม.)'}])
+      }
+      return replyLINE(token,[{type:'text',text:'ไม่มี timer ที่ทำงาน'}])
+    }
   }
 
-  // /edit-cat <id>
-  if (c === '/edit-cat' && arg) {
-    setSession(userId, 'editing_cat', { worklogId: arg })
-    return replyLINE(replyToken, [{
+  if (cmd==='/help') {
+    return replyLINE(token,[{
       type:'text',
-      text:'📂 เลือกหมวดหมู่:\ngraphic / video / photo / marketing / ai / branding / pos / other'
+      text:'🤖 WorkLog AI Commands\n\n/today — งานวันนี้ (Flex Card)\n/logs — งานล่าสุด\n/summary — สรุปเดือนนี้\n/edit <id> — แก้ไขงาน\n/addimage <id> — เพิ่มรูป\n/timer start/stop\n\n💡 พิมพ์บอกว่าทำงานอะไร หรือส่งรูป AI บันทึกให้เลย!',
+      quickReply:{
+        items:[
+          { type:'action', action:{ type:'message', label:'📊 วันนี้', text:'/today' } },
+          { type:'action', action:{ type:'message', label:'📋 งานล่าสุด', text:'/logs' } },
+          { type:'action', action:{ type:'message', label:'📈 สรุปเดือน', text:'/summary' } },
+        ]
+      }
     }])
   }
 
-  // /addimage <id>
-  if (c === '/addimage' && arg) {
-    setSession(userId, 'adding_image', { worklogId: arg })
-    return replyLINE(replyToken, [{ type:'text', text:'📸 ส่งรูปภาพที่ต้องการเพิ่ม:' }])
-  }
-
-  // /timer
-  if (c === '/timer') {
-    if (arg === 'start') {
-      await supabase.from('line_timers').upsert({line_user_id:userId,started_at:new Date().toISOString(),active:true})
-      return replyLINE(replyToken,[{type:'text',text:'⏱ เริ่มจับเวลาแล้ว!\nส่ง /timer stop เมื่อเสร็จงาน'}])
-    }
-    if (arg === 'stop') {
-      const { data:timer } = await supabase.from('line_timers').select('*').eq('line_user_id',userId).eq('active',true).single()
-      if (timer) {
-        const min=Math.round((Date.now()-new Date(timer.started_at).getTime())/60000)
-        await supabase.from('line_timers').update({active:false}).eq('id',timer.id)
-        return replyLINE(replyToken,[{type:'text',text:'⏱ หยุดแล้ว · '+min+' นาที ('+Math.round(min/6)/10+' ชม.)\nส่งข้อความหรือรูปเพื่อบันทึกงาน 📝'}])
-      }
-      return replyLINE(replyToken,[{type:'text',text:'ไม่มี timer ที่ทำงาน\nส่ง /timer start เพื่อเริ่ม'}])
-    }
-  }
-
-  // /help
-  if (c === '/help') {
-    return replyLINE(replyToken, [{
-      type:'text',
-      text:'🤖 WorkLog AI\n\n📋 คำสั่ง:\n/today — งานวันนี้\n/logs — งานล่าสุด (Flex UI)\n/summary — สรุปเดือนนี้\n/timer start / stop\n/edit <id> — แก้ไขงาน\n\n💡 วิธีใช้:\n• พิมพ์บอกว่าทำงานอะไร\n• ส่งรูป → บอกรายละเอียด\n• AI บันทึกให้อัตโนมัติ!'
-    }])
-  }
-
-  return replyLINE(replyToken,[{type:'text',text:'ไม่รู้จักคำสั่ง ส่ง /help เพื่อดูทั้งหมด'}])
+  return replyLINE(token,[{
+    type:'text', text:'ไม่รู้จักคำสั่ง ส่ง /help',
+    quickReply:{items:[
+      { type:'action', action:{ type:'message', label:'❓ Help', text:'/help' } },
+      { type:'action', action:{ type:'message', label:'📊 วันนี้', text:'/today' } },
+    ]}
+  }])
 }
 
 // ─────────────────────────────────────────
-// HANDLE SESSION STATE
+// SESSION HANDLER
 // ─────────────────────────────────────────
-async function handleSessionInput(userId, text, replyToken) {
-  const session = getSession(userId)
+async function handleSession(uid, text, token) {
+  const s=getSession(uid)
 
-  // Awaiting description for pending image
-  if (session.state === 'awaiting_description') {
-    const imageUrl = session.data.imageUrl
-    clearSession(userId)
-
-    await replyLINE(replyToken, [{ type:'text', text:'⏳ AI กำลังวิเคราะห์งาน...' }])
-
-    // Analyze
-    const analyzed = await analyzeWorklog(text, text, 'graphic')
-    const data = {
-      title:    analyzed.refined_title || text.slice(0,60),
-      desc:     text,
-      summary:  analyzed.summary,
-      category: analyzed.category || 'graphic',
-      hours:    analyzed.hours || 1,
-      tags:     analyzed.tags || [],
-      images:   imageUrl ? [imageUrl] : [],
+  if (s.state==='awaiting_desc') {
+    clearSession(uid)
+    await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์...'}])
+    const analyzed=await analyze(text,text)
+    const d={
+      title: analyzed.refined_title||text.slice(0,60),
+      desc: text, summary:analyzed.summary,
+      category:analyzed.category||'graphic', hours:analyzed.hours||1,
+      tags:analyzed.tags||[], images:[s.data.imgUrl].filter(Boolean),
     }
-
-    // Save
-    const saved = await saveWorklog(userId, data)
-
-    // Reply with beautiful card
-    return replyLINE(replyToken, [flexWorklogCard(data, saved)])
+    const saved=await saveWorklog(uid,d)
+    return replyLINE(token, msgWorklogSaved(d,saved))
   }
 
-  // Editing title
-  if (session.state === 'editing_title') {
-    const { worklogId } = session.data
-    clearSession(userId)
-    await updateWorklog(worklogId, { title: text })
-    return replyLINE(replyToken, [{ type:'text', text:'✅ แก้ชื่องานเป็น: '+text }])
+  if (s.state==='editing_title') {
+    clearSession(uid)
+    await updateWorklog(s.data.id,{title:text})
+    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนชื่อเป็น: '+text}])
+  }
+  if (s.state==='editing_desc') {
+    clearSession(uid)
+    await updateWorklog(s.data.id,{desc:text})
+    return replyLINE(token,[{type:'text',text:'✅ แก้รายละเอียดแล้ว'}])
+  }
+  if (s.state==='editing_hours') {
+    const h=parseFloat(text)||1
+    clearSession(uid)
+    await updateWorklog(s.data.id,{hours:h})
+    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนเวลาเป็น '+h+' ชม.'}])
+  }
+  if (s.state==='editing_cat') {
+    const cat=text.trim().toLowerCase()
+    if (!CAT[cat]) return replyLINE(token,[{
+      type:'text', text:'กรุณาเลือกหมวดจากปุ่มด้านล่าง:',
+      quickReply: qrCategories('/set-cat', s.data.id)
+    }])
+    clearSession(uid)
+    await updateWorklog(s.data.id,{category:cat})
+    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนหมวดเป็น '+(CAT[cat].emoji)+' '+(CAT[cat].label)}])
   }
 
-  // Editing description
-  if (session.state === 'editing_desc') {
-    const { worklogId } = session.data
-    clearSession(userId)
-    await updateWorklog(worklogId, { desc: text })
-    return replyLINE(replyToken, [{ type:'text', text:'✅ แก้รายละเอียดแล้ว' }])
-  }
-
-  // Editing hours
-  if (session.state === 'editing_hours') {
-    const { worklogId } = session.data
-    const hours = parseFloat(text) || 1
-    clearSession(userId)
-    await updateWorklog(worklogId, { hours })
-    return replyLINE(replyToken, [{ type:'text', text:'✅ แก้เวลาเป็น '+hours+' ชั่วโมง' }])
-  }
-
-  // Editing category
-  if (session.state === 'editing_cat') {
-    const { worklogId } = session.data
-    const cat = text.trim().toLowerCase()
-    const valid = Object.keys(CAT_EMOJI)
-    if (!valid.includes(cat)) {
-      return replyLINE(replyToken,[{type:'text',text:'หมวดที่รองรับ: '+valid.join(', ')}])
-    }
-    clearSession(userId)
-    await updateWorklog(worklogId, { category: cat })
-    return replyLINE(replyToken, [{ type:'text', text:'✅ แก้หมวดเป็น '+CAT_EMOJI[cat]+' '+cat }])
-  }
-
-  return false // not in session
+  return false
 }
 
 // ─────────────────────────────────────────
 // MAIN EVENT PROCESSOR
 // ─────────────────────────────────────────
 async function processEvent(event) {
-  const userId     = event.source?.userId || 'unknown'
-  const replyToken = event.replyToken
-  const mtype      = event.message?.type
+  const uid   = event.source?.userId||'unknown'
+  const token = event.replyToken
+  const mtype = event.message?.type
 
-  // FOLLOW
-  if (event.type === 'follow') {
-    await supabase.from('line_users')
-      .upsert({ line_user_id:userId, followed_at:new Date().toISOString(), active:true })
-      .catch(()=>{})
-    return replyLINE(replyToken, [{
+  if (event.type==='follow') {
+    await supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).catch(()=>{})
+    return replyLINE(token,[{
       type:'text',
-      text:'👋 ยินดีต้อนรับสู่ WorkLog AI! 🎉\n\n💡 วิธีใช้:\n• พิมพ์บอกว่าทำงานอะไร\n• ส่งรูปผลงาน → AI บันทึกให้เลย\n\nส่ง /help เพื่อดูคำสั่งทั้งหมด'
+      text:'👋 ยินดีต้อนรับสู่ WorkLog AI! 🎉\n\n💡 วิธีใช้:\n• พิมพ์บอกว่าทำงานอะไร\n• ส่งรูปผลงาน → AI บันทึกให้เลย\n\nส่ง /help เพื่อดูคำสั่งทั้งหมด',
+      quickReply:{items:[
+        { type:'action', action:{ type:'message', label:'❓ Help', text:'/help' } },
+        { type:'action', action:{ type:'message', label:'📊 วันนี้', text:'/today' } },
+      ]}
     }])
   }
 
-  if (event.type !== 'message') return
+  if (event.type!=='message') return
 
   // TEXT
-  if (mtype === 'text') {
-    const text = (event.message.text || '').trim()
+  if (mtype==='text') {
+    const text=(event.message.text||'').trim()
     if (!text) return
-
-    // Commands
-    if (text.startsWith('/')) return handleCommand(userId, text, replyToken)
-
-    // Check active session first
-    const session = getSession(userId)
-    if (session.state !== 'idle') {
-      const handled = await handleSessionInput(userId, text, replyToken)
-      if (handled !== false) return
+    if (text.startsWith('/')) return handleCmd(uid,text,token)
+    const s=getSession(uid)
+    if (s.state!=='idle') {
+      const handled=await handleSession(uid,text,token)
+      if (handled!==false) return
     }
-
-    // Normal worklog from text
-    await replyLINE(replyToken, [{ type:'text', text:'⏳ AI กำลังวิเคราะห์งาน...' }])
-
-    const analyzed = await analyzeWorklog(text, text, 'other')
-    const data = {
-      title:    analyzed.refined_title || text.slice(0,60),
-      desc:     text,
-      summary:  analyzed.summary,
-      category: analyzed.category || 'other',
-      hours:    analyzed.hours || 1,
-      tags:     analyzed.tags || [],
-      images:   [],
+    // Normal worklog
+    await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์งาน...'}])
+    const analyzed=await analyze(text,text)
+    const d={
+      title:analyzed.refined_title||text.slice(0,60), desc:text,
+      summary:analyzed.summary, category:analyzed.category||'other',
+      hours:analyzed.hours||1, tags:analyzed.tags||[], images:[],
     }
-    const saved = await saveWorklog(userId, data)
-    return replyLINE(replyToken, [flexWorklogCard(data, saved)])
+    const saved=await saveWorklog(uid,d)
+    return replyLINE(token, msgWorklogSaved(d,saved))
   }
 
-  // IMAGE — start multi-step flow
-  if (mtype === 'image') {
-    // Download image
-    const buffer = await getLineContent(event.message.id)
-    let imageUrl = null
-    if (buffer) {
-      imageUrl = await uploadImage(buffer, event.message.id)
-    }
-
-    // Check if in "adding_image" session (add to existing worklog)
-    const session = getSession(userId)
-    if (session.state === 'adding_image' && session.data.worklogId) {
-      const { worklogId } = session.data
-      clearSession(userId)
-      if (imageUrl) {
-        const { data:wl } = await supabase.from('work_logs').select('image_urls').eq('id',worklogId).single()
-        const newUrls = [...(wl?.image_urls||[]), imageUrl]
-        await supabase.from('work_logs').update({ image_urls: newUrls }).eq('id', worklogId)
-        return replyLINE(replyToken, [{ type:'text', text:'📸 เพิ่มรูปแล้ว ✅ ('+newUrls.length+' รูปทั้งหมด)' }])
+  // IMAGE
+  if (mtype==='image') {
+    const s=getSession(uid)
+    // Adding image to existing worklog
+    if (s.state==='adding_img' && s.data.id) {
+      const buf=await getContent(event.message.id)
+      const url=buf?await uploadImg(buf,event.message.id):null
+      if (url) {
+        const log=await getWorklog(s.data.id)
+        const imgs=[...(log?.image_urls||[]),url]
+        await updateWorklog(s.data.id,{images:imgs})
+        clearSession(uid)
+        return replyLINE(token,[{type:'text',text:'📸 เพิ่มรูปแล้ว ✅ ('+imgs.length+' รูปทั้งหมด)'}])
       }
-      return replyLINE(replyToken, [{ type:'text', text:'⚠️ อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง' }])
+      clearSession(uid)
+      return replyLINE(token,[{type:'text',text:'⚠️ อัปโหลดรูปไม่สำเร็จ'}])
     }
-
-    // Start awaiting_description session
-    setSession(userId, 'awaiting_description', { imageUrl })
-
-    return replyLINE(replyToken, [flexAskDescription(imageUrl)])
+    // New image → ask for description
+    const buf=await getContent(event.message.id)
+    const imgUrl=buf?await uploadImg(buf,event.message.id):null
+    setSession(uid,'awaiting_desc',{imgUrl})
+    return replyLINE(token, msgImageReceived(imgUrl||'https://via.placeholder.com/800x400/6C63FF/FFFFFF?text=WorkLog+AI'))
   }
 
-  // VIDEO
-  if (mtype === 'video') {
-    return replyLINE(replyToken, [{ type:'text', text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก' }])
-  }
-
-  // AUDIO
-  if (mtype === 'audio') {
-    return replyLINE(replyToken, [{ type:'text', text:'🎤 รับเสียงแล้ว!\nพิมพ์บอกว่าทำงานอะไร AI จะบันทึกให้ 📝' }])
-  }
-
-  // FILE
-  if (mtype === 'file') {
-    return replyLINE(replyToken, [{ type:'text', text:'📎 รับไฟล์ "' + (event.message.fileName||'ไฟล์') + '" แล้ว ✅' }])
-  }
+  if (mtype==='video') return replyLINE(token,[{type:'text',text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก'}])
+  if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับเสียงแล้ว!\nพิมพ์บอกว่าทำงานอะไร 📝'}])
+  if (mtype==='file') return replyLINE(token,[{type:'text',text:'📎 รับไฟล์ "+(event.message.fileName||"ไฟล์")+" แล้ว ✅'}])
 }
 
 // ─────────────────────────────────────────
-// GET — health check
+// ROUTES
 // ─────────────────────────────────────────
 export async function GET() {
   return NextResponse.json({
-    status: 'WorkLog AI LINE Webhook v2 ✅',
-    time: new Date().toISOString(),
-    features: ['flex-messages','multi-step-flow','image+text-combined','edit-worklogs'],
-    env: {
-      LINE_TOKEN:    LINE_TOKEN    ? '✅' : '❌ missing',
-      LINE_SECRET:   LINE_SECRET   ? '✅' : '❌ missing',
-      ANTHROPIC_KEY: ANTHROPIC_KEY ? '✅' : '❌ missing',
-      SUPABASE:      SUPABASE_URL  ? '✅' : '❌ missing',
+    status:'WorkLog AI LINE Bot v3 ✅',
+    time:new Date().toISOString(),
+    env:{
+      LINE_TOKEN:LINE_TOKEN?'✅':'❌',
+      ANTHROPIC:ANTHROPIC_KEY?'✅':'❌',
+      SUPABASE:SUPABASE_URL?'✅':'❌',
     }
   })
 }
 
-// ─────────────────────────────────────────
-// POST — main handler
-// ─────────────────────────────────────────
 export async function POST(request) {
-  const t0 = Date.now()
+  const t0=Date.now()
   try {
-    const rawBody   = await request.text()
-    const signature = request.headers.get('x-line-signature') || ''
-
-    if (!verifySignature(rawBody, signature)) {
-      return NextResponse.json({ error:'Invalid signature' }, { status:401 })
-    }
-
+    const raw=await request.text()
+    const sig=request.headers.get('x-line-signature')||''
+    if (!verifySig(raw,sig)) return NextResponse.json({error:'Invalid signature'},{status:401})
     let payload
-    try { payload = JSON.parse(rawBody) }
-    catch { return NextResponse.json({ error:'Bad JSON' }, { status:400 }) }
-
-    const events = payload.events || []
-    if (!events.length) return NextResponse.json({ ok:true, processed:0 })
-
-    await Promise.all(events.map(e =>
-      processEvent(e).catch(err => console.error('[WEBHOOK] event error:', err))
-    ))
-
-    console.log('[WEBHOOK] done in', Date.now()-t0+'ms')
-    return NextResponse.json({ ok:true, processed:events.length, ms:Date.now()-t0 })
+    try { payload=JSON.parse(raw) } catch { return NextResponse.json({error:'Bad JSON'},{status:400}) }
+    const events=payload.events||[]
+    if (!events.length) return NextResponse.json({ok:true,processed:0})
+    await Promise.all(events.map(e=>processEvent(e).catch(err=>console.error('[EVENT]',err))))
+    console.log('[WEBHOOK] done',Date.now()-t0+'ms')
+    return NextResponse.json({ok:true,processed:events.length,ms:Date.now()-t0})
   } catch(e) {
-    console.error('[WEBHOOK] fatal:', e)
-    return NextResponse.json({ error:'Internal error' }, { status:500 })
+    console.error('[FATAL]',e)
+    return NextResponse.json({error:'Internal error'},{status:500})
   }
 }

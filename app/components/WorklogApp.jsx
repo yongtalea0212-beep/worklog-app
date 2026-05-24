@@ -726,42 +726,49 @@ body::before {
 ::-webkit-scrollbar-thumb:hover { background: rgba(108,99,255,0.38); }
 
 /* ════════════════════════════════════════
-   MOBILE RESPONSIVE
+   MOBILE — ALL PAGES
 ════════════════════════════════════════ */
 @media (max-width: 768px) {
   .sb { display: none; }
   .app { display: block; }
   .main { min-height: 100vh; }
 
-  .topbar {
-    padding: 12px 16px;
-    position: sticky; top: 0; z-index: 50;
-  }
+  /* Topbar */
+  .topbar { padding: 11px 14px; }
   .topbar .btn-ghost { display: none; }
+  .topbar .btn-primary.btn-sm { font-size: 12px; padding: 7px 12px; }
 
-  .content {
-    padding: 16px 14px 90px;
-  }
+  /* Content */
+  .content { padding: 14px 12px 92px; }
 
-  .kpi-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
+  /* Hero */
+  .hero { padding: 18px 16px; }
+  .hero > div > div:last-child { display: none; }
 
-  .g2, .g3, .g3-1 {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
+  /* KPI: 2 cols */
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 14px 12px; }
 
-  .hero { padding: 20px; }
+  /* All multi-col grids → 1 col */
+  .g2, .g3, .g3-1 { grid-template-columns: 1fr; gap: 12px; }
 
-  .card { padding: 16px; }
+  /* Card */
+  .card { padding: 14px 12px; }
 
-  .modal { padding: 20px; margin: 12px; }
-  .modal-wrap { padding: 12px; align-items: flex-end; }
-  .modal { border-radius: var(--r-lg) var(--r-lg) 0 0; max-height: 92vh; }
+  /* LogForm grids → 1 col */
+  .lf-3col { grid-template-columns: 1fr !important; }
+  .lf-2col { grid-template-columns: 1fr !important; }
 
-  .toast { bottom: 90px; right: 16px; left: 16px; justify-content: center; }
+  /* Modal slides up */
+  .modal-wrap { padding: 0; align-items: flex-end; }
+  .modal { border-radius: 24px 24px 0 0; max-height: 92vh; padding: 20px 16px; width: 100%; }
+
+  /* Toast above bottom nav */
+  .toast { bottom: 84px; right: 12px; left: 12px; justify-content: center; font-size: 13px; }
+
+  /* Command palette slides up */
+  .overlay { padding: 0; align-items: flex-end; }
+  .cmd-box { width: 100%; border-radius: 24px 24px 0 0; max-height: 70vh; }
 }
 
 /* ════════════════════════════════════════
@@ -1130,7 +1137,7 @@ function LogForm({ initial, onSave, onCancel }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
-      <div style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:12,marginBottom:14}}>
+      <div className="lf-2col" style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:12,marginBottom:14}}>
         <div><label style={labelStyle}>วันที่</label><input className="input" type="date" value={form.date} onChange={e=>set("date",e.target.value)}/></div>
         <div><label style={labelStyle}>ชื่องาน *</label><input className="input" placeholder="เช่น ออกแบบโปสเตอร์..." value={form.title} onChange={e=>set("title",e.target.value)}/></div>
       </div>
@@ -1150,7 +1157,7 @@ function LogForm({ initial, onSave, onCancel }) {
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
+      <div className="lf-3col" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
         <div><label style={labelStyle}>หมวดหมู่</label>
           <select className="input" value={form.category} onChange={e=>set("category",e.target.value)}>
             {CATS.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}

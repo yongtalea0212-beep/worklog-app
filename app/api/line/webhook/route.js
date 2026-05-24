@@ -843,26 +843,34 @@ async function processEvent(event) {
   if (event.type!=='message') return
 
   // TEXT
-  if (mtype==='text') {
-    const text=(event.message.text||'').trim()
-    if (!text) return
-    if (text.startsWith('/')) return handleCmd(uid,text,token)
-    const s=getSession(uid)
-    if (s.state!=='idle') {
-      const handled=await handleSession(uid,text,token)
-      if (handled!==false) return
-    }
-    // Normal worklog
-    await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์งาน...'}])
-    const analyzed=await analyze(text,text)
-    const d={
-      title:analyzed.refined_title||text.slice(0,60), desc:text,
-      summary:analyzed.summary, category:analyzed.category||'other',
-      hours:analyzed.hours||1, tags:analyzed.tags||[], images:[],
-    }
-    const saved=await saveWorklog(uid,d)
-    return replyLINE(token, msgWorklogSaved(d,saved))
+if (mtype==='text') {
+  const text=(event.message.text||'').trim()
+  if (!text) return
+  await logMessage(userId,'text',text)
+
+  if (text.startsWith('/')) return handleCommand(userId,text,replyToken)
+
+  // ✅ DO EVERYTHING before replyToken expires
+  // claude-haiku is fast enough (~1-2s)
+  try {
+    const analyzed = await analyzeWorklog(text)
+    await saveWorklog(userId, analyzed)
+
+    const emoji = CAT_EMOJI[analyzed.category]||'📌'
+    return replyLINE(replyToken, [{
+      type: 'text',
+      text: '✅ บันทึกแล้ว!\n\n'
+        + emoji + ' ' + analyzed.title
+        + '\n⏱ ' + analyzed.hours + ' ชม.'
+        + '\n📂 ' + analyzed.category
+        + (analyzed.tags?.length ? '\n🏷 ' + analyzed.tags.join(', ') : '')
+        + '\n\n✨ ' + analyzed.summary,
+    }])
+  } catch(e) {
+    console.error('[TEXT] error:', e)
+    return replyLINE(replyToken, [{ type:'text', text:'✅ รับข้อความแล้ว! (บันทึกด้วยตนเองที่ WorkLog AI)' }])
   }
+}
 
   // IMAGE
   if (mtype==='image') {

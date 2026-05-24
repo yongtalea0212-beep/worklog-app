@@ -35,6 +35,18 @@ async function callAI(prompt) {
   } catch { return '' }
 }
 
+async function sendLineNotify(log, trigger) {
+  try {
+    const userId = localStorage.getItem('line_user_id') || ''
+    if (!userId) return
+    await fetch('/api/line/webhook', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ log, userId, trigger }),
+    })
+  } catch {}
+}
+
 // ─────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────
@@ -525,6 +537,8 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   const [dragging, setDragging] = useState(false)
   const [timerRunning, setTimerRunning] = useState(false)
   const [statusHint, setStatusHint] = useState(null)
+  const [lineUserId, setLineUserId] = useState('')
+  const [showLineSetup, setShowLineSetup] = useState(false)
   const fileRef = useRef()
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -549,6 +563,8 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
         if (d?.title) setForm(f => ({ ...f, ...d }))
       } catch {}
     }
+    const saved = localStorage.getItem('line_user_id') || ''
+    setLineUserId(saved)
   }, [])
 
   // Handle file upload — ถ้า parent ส่ง onUploadFiles มา ใช้ supabase upload
@@ -582,6 +598,7 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
     setSaving(true)
     try { localStorage.removeItem('worklog_draft') } catch {}
     await onSave(form)
+    sendLineNotify(form, 'save')
     setSaving(false)
   }
 
@@ -686,7 +703,10 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
               <label className="ww-label">สถานะงาน</label>
               <StatusSelector
                 value={form.status}
-                onChange={v => set('status', v)}
+                onChange={v => {
+                  set('status', v)
+                  sendLineNotify({ ...form, status: v }, 'status_change')
+                }}
                 timerRunning={timerRunning}
               />
 
@@ -711,7 +731,11 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                 <label className="ww-label">⏱ LIVE TIMER</label>
                 <LiveTimer
                   onHoursChange={h => { if (h > 0) set('hours', Math.max(0.5, parseFloat(h.toFixed(1)))) }}
-                  onStart={() => { setTimerRunning(true); if (form.status !== 'in_progress') set('status', 'in_progress') }}
+                  onStart={() => {
+                    setTimerRunning(true)
+                    if (form.status !== 'in_progress') set('status', 'in_progress')
+                    sendLineNotify({ ...form, status: 'in_progress' }, 'timer_start')
+                  }}
                   onStop={() => setTimerRunning(false)}
                 />
               </div>
@@ -804,6 +828,57 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                   onKeyDown={e => { if (e.key==='Enter') { e.preventDefault(); addTag() } }}/>
                 <button onClick={addTag} className="ww-btn-ghost" style={{ fontSize:12 }}>+ เพิ่ม</button>
               </div>
+            </div>
+
+            {/* Line Notify Setup */}
+            <div className="ww-glass" style={{ padding:16 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: showLineSetup ? 12 : 0 }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:'#06C755', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>💬</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#1a1a2e' }}>Line Notify</div>
+                  <div style={{ fontSize:10, color: lineUserId ? '#10B981' : '#9ca3af' }}>
+                    {lineUserId ? '✅ เชื่อมต่อแล้ว — แจ้งเตือนทุก action' : 'ยังไม่ได้ตั้งค่า'}
+                  </div>
+                </div>
+                <button onClick={() => setShowLineSetup(s => !s)} style={{
+                  padding:'5px 12px', borderRadius:8, border:'1px solid rgba(6,199,85,0.35)',
+                  background: lineUserId ? 'rgba(6,199,85,0.08)' : 'rgba(108,99,255,0.08)',
+                  color: lineUserId ? '#059669' : '#6C63FF',
+                  fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                }}>
+                  {showLineSetup ? 'ซ่อน' : lineUserId ? 'แก้ไข' : 'ตั้งค่า'}
+                </button>
+              </div>
+              {showLineSetup && (
+                <div>
+                  <div style={{ fontSize:11, color:'#6b7099', marginBottom:8, lineHeight:1.6 }}>
+                    พิมพ์ <code style={{ background:'rgba(108,99,255,0.1)', padding:'1px 6px', borderRadius:4, color:'#6C63FF' }}>/myid</code> ใน Line Bot เพื่อรับ User ID ของคุณ
+                  </div>
+                  <div style={{ display:'flex', gap:7 }}>
+                    <input className="ww-input" style={{ flex:1, fontSize:12 }}
+                      placeholder="วาง Line User ID ที่นี่..."
+                      defaultValue={lineUserId}
+                      id="line-user-id-input"
+                    />
+                    <button onClick={() => {
+                      const val = document.getElementById('line-user-id-input').value.trim()
+                      if (val) { localStorage.setItem('line_user_id', val); setLineUserId(val) }
+                      setShowLineSetup(false)
+                    }} className="ww-btn-primary" style={{ padding:'8px 14px', fontSize:12 }}>
+                      บันทึก
+                    </button>
+                    {lineUserId && (
+                      <button onClick={() => {
+                        localStorage.removeItem('line_user_id')
+                        setLineUserId('')
+                        setShowLineSetup(false)
+                      }} className="ww-btn-ghost" style={{ fontSize:12 }}>
+                        ลบ
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Save */}

@@ -843,26 +843,30 @@ async function processEvent(event) {
   if (event.type!=='message') return
 
   // TEXT
-  if (mtype==='text') {
-    const text=(event.message.text||'').trim()
-    if (!text) return
-    if (text.startsWith('/')) return handleCmd(uid,text,token)
-    const s=getSession(uid)
-    if (s.state!=='idle') {
-      const handled=await handleSession(uid,text,token)
-      if (handled!==false) return
-    }
-    // Normal worklog
-    await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์งาน...'}])
-    const analyzed=await analyze(text,text)
-    const d={
-      title:analyzed.refined_title||text.slice(0,60), desc:text,
-      summary:analyzed.summary, category:analyzed.category||'other',
-      hours:analyzed.hours||1, tags:analyzed.tags||[], images:[],
-    }
-    const saved=await saveWorklog(uid,d)
-    return replyLINE(token, msgWorklogSaved(d,saved))
+if (mtype==='text') {
+  const text=(event.message.text||'').trim()
+  if (!text) return
+  if (text.startsWith('/')) return handleCmd(uid,text,token)
+  const s=getSession(uid)
+  if (s.state!=='idle') {
+    const handled=await handleSession(uid,text,token)
+    if (handled!==false) return
   }
+
+  // ✅ วิเคราะห์ก่อน แล้ว reply ครั้งเดียว
+  const analyzed = await analyze(text, text)
+  const d = {
+    title:    analyzed.refined_title || text.slice(0,60),
+    desc:     text,
+    summary:  analyzed.summary,
+    category: analyzed.category || 'other',
+    hours:    analyzed.hours || 1,
+    tags:     analyzed.tags || [],
+    images:   [],
+  }
+  const saved = await saveWorklog(uid, d)
+  return replyLINE(token, msgWorklogSaved(d, saved))
+}
 
   // IMAGE
   if (mtype==='image') {

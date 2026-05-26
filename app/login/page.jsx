@@ -1,13 +1,12 @@
 'use client'
 // app/login/page.js
 import { useState, useEffect } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { supabase } from '@/lib/supabase-auth'
 import { useRouter } from 'next/navigation'
 
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
   const [mode, setMode]       = useState('login') // 'login' | 'signup' | 'forgot'
   const [email, setEmail]     = useState('')
   const [password, setPass]   = useState('')

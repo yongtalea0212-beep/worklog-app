@@ -1,7 +1,7 @@
 'use client'
 // app/login/page.js
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase-auth'
+import { supabase } from '../../lib/supabase-auth'
 import { useRouter } from 'next/navigation'
 
 

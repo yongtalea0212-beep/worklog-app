@@ -2,7 +2,7 @@
 // app/components/CategoryManager.jsx
 // Dynamic category CRUD with icon picker + color picker
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase-auth'
+import { supabase } from '../../lib/supabase-auth'
 
 // 200+ icons organized by group
 const ICON_GROUPS = {

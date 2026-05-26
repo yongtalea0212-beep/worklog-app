@@ -2011,7 +2011,8 @@ export default function App(){
         <div className="sb">
           <div className="sb-logo">
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div className="logo-mark" style={{padding:0,overflow:"hidden"}}><img src="/Stayscape.png" alt="StayScape" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"inherit"}}/></div>
+              <div className="logo-mark">
+  <span style={{background:"linear-gradient(135deg,#a78bfa,#38bdf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontSize:15,fontWeight:900,letterSpacing:"-1px"}}>SS</span></div>
               <div><div className="logo-name">StayScape</div><div className="logo-sub">Work · Life · Balance</div></div>
             </div>
           </div>

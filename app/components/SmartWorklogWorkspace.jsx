@@ -538,6 +538,8 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   const [timerRunning, setTimerRunning] = useState(false)
   const [statusHint, setStatusHint] = useState(null)
   const [lineUserId, setLineUserId] = useState('')
+  const [lineDisplayName, setLineDisplayName] = useState('')
+  const [linePictureUrl, setLinePictureUrl] = useState('')
   const [showLineSetup, setShowLineSetup] = useState(false)
   const fileRef = useRef()
 
@@ -564,7 +566,11 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
       } catch {}
     }
     const saved = localStorage.getItem('line_user_id') || ''
+    const savedName = localStorage.getItem('line_display_name') || ''
+    const savedPic  = localStorage.getItem('line_picture_url') || ''
     setLineUserId(saved)
+    setLineDisplayName(savedName)
+    setLinePictureUrl(savedPic)
   }, [])
 
   // Handle file upload — ถ้า parent ส่ง onUploadFiles มา ใช้ supabase upload
@@ -830,33 +836,64 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
               </div>
             </div>
 
-            {/* Line Notify Setup */}
+            {/* Line Notify Setup — LIFF version */}
             <div className="ww-glass" style={{ padding:16 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: showLineSetup ? 12 : 0 }}>
-                <div style={{ width:32, height:32, borderRadius:9, background:'#06C755', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>💬</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#1a1a2e' }}>Line Notify</div>
+              {/* Header row */}
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                {/* Avatar or icon */}
+                {linePictureUrl
+                  ? <img src={linePictureUrl} alt="" style={{ width:36, height:36, borderRadius:'50%', border:'2px solid rgba(6,199,85,0.35)', flexShrink:0 }}/>
+                  : <div style={{ width:36, height:36, borderRadius:10, background:'#06C755', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>💬</div>
+                }
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#1a1a2e' }}>
+                    {lineDisplayName || 'Line Notify'}
+                  </div>
                   <div style={{ fontSize:10, color: lineUserId ? '#10B981' : '#9ca3af' }}>
-                    {lineUserId ? '✅ เชื่อมต่อแล้ว — แจ้งเตือนทุก action' : 'ยังไม่ได้ตั้งค่า'}
+                    {lineUserId ? '✅ เชื่อมต่อแล้ว — แจ้งเตือนทุก action' : 'กดเชื่อมต่อเพื่อรับการแจ้งเตือน'}
                   </div>
                 </div>
-                <button onClick={() => setShowLineSetup(s => !s)} style={{
-                  padding:'5px 12px', borderRadius:8, border:'1px solid rgba(6,199,85,0.35)',
-                  background: lineUserId ? 'rgba(6,199,85,0.08)' : 'rgba(108,99,255,0.08)',
-                  color: lineUserId ? '#059669' : '#6C63FF',
-                  fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
-                }}>
-                  {showLineSetup ? 'ซ่อน' : lineUserId ? 'แก้ไข' : 'ตั้งค่า'}
-                </button>
+                {lineUserId
+                  ? <button onClick={() => {
+                      localStorage.removeItem('line_user_id')
+                      localStorage.removeItem('line_display_name')
+                      localStorage.removeItem('line_picture_url')
+                      setLineUserId(''); setLineDisplayName(''); setLinePictureUrl('')
+                    }} style={{
+                      padding:'5px 10px', borderRadius:8,
+                      border:'1px solid rgba(239,68,68,0.25)',
+                      background:'rgba(239,68,68,0.06)',
+                      color:'#EF4444', fontSize:11, fontWeight:600,
+                      cursor:'pointer', fontFamily:'inherit', flexShrink:0,
+                    }}>ยกเลิก</button>
+                  : <a href={`https://liff.line.me/${process.env.NEXT_PUBLIC_LIFF_ID || ''}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{
+                        display:'inline-flex', alignItems:'center', gap:5,
+                        padding:'7px 14px', borderRadius:8,
+                        background:'#06C755', color:'white',
+                        fontSize:12, fontWeight:700,
+                        textDecoration:'none', flexShrink:0,
+                        boxShadow:'0 3px 10px rgba(6,199,85,0.3)',
+                      }}>
+                      💬 เชื่อมต่อ Line
+                    </a>
+                }
               </div>
-              {showLineSetup && (
-                <div>
-                  <div style={{ fontSize:11, color:'#6b7099', marginBottom:8, lineHeight:1.6 }}>
-                    พิมพ์ <code style={{ background:'rgba(108,99,255,0.1)', padding:'1px 6px', borderRadius:4, color:'#6C63FF' }}>/myid</code> ใน Line Bot เพื่อรับ User ID ของคุณ
-                  </div>
-                  <div style={{ display:'flex', gap:7 }}>
+
+              {/* Manual fallback — toggle */}
+              <div style={{ marginTop:10 }}>
+                <button onClick={() => setShowLineSetup(s=>!s)} style={{
+                  background:'none', border:'none', fontSize:10,
+                  color:'#9ca3af', cursor:'pointer', fontFamily:'inherit',
+                  textDecoration:'underline', padding:0,
+                }}>
+                  {showLineSetup ? 'ซ่อน' : 'ใส่ User ID เอง (manual)'}
+                </button>
+                {showLineSetup && (
+                  <div style={{ marginTop:8, display:'flex', gap:7 }}>
                     <input className="ww-input" style={{ flex:1, fontSize:12 }}
-                      placeholder="วาง Line User ID ที่นี่..."
+                      placeholder="วาง Line User ID..."
                       defaultValue={lineUserId}
                       id="line-user-id-input"
                     />
@@ -867,18 +904,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                     }} className="ww-btn-primary" style={{ padding:'8px 14px', fontSize:12 }}>
                       บันทึก
                     </button>
-                    {lineUserId && (
-                      <button onClick={() => {
-                        localStorage.removeItem('line_user_id')
-                        setLineUserId('')
-                        setShowLineSetup(false)
-                      }} className="ww-btn-ghost" style={{ fontSize:12 }}>
-                        ลบ
-                      </button>
-                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Bottom Save */}

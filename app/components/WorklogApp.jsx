@@ -8,6 +8,9 @@ import AIAssistantPage from './AIAssistantPage'
 import SmartProductivityPanel from './SmartProductivityPanel'
 import SmartWorklogWorkspace from './SmartWorklogWorkspace'
 import PresentationStudio from './PresentationStudio'
+import LINEIntegrationPage from './LINEIntegrationPage'
+import MobileNav from './MobileNav'
+import CategoryManager, { useCategories } from './CategoryManager'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -1793,12 +1796,28 @@ export default function App(){
   const [toast,setToast]=useState(null)
   const [mobMenu,setMobMenu]=useState(false)
   const [isMobile,setIsMobile]=useState(false)
+  const [user,setUser]=useState(null)
+  const [authLoading,setAuthLoading]=useState(true)
+  const [showCatManager,setShowCatManager]=useState(false)
+  const { cats:DYNAMIC_CATS } = useCategories()
 
   useEffect(()=>{
     const check=()=>setIsMobile(window.innerWidth<=768)
     check()
     window.addEventListener('resize',check)
     return()=>window.removeEventListener('resize',check)
+  },[])
+
+  // Auth state listener
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>{
+      setUser(data.session?.user||null)
+      setAuthLoading(false)
+    })
+    const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
+      setUser(session?.user||null)
+    })
+    return()=>subscription.unsubscribe()
   },[])
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
@@ -1867,26 +1886,31 @@ export default function App(){
 
   // Sidebar nav structure
   const mainNav=[
-    {id:"dashboard",     icon:"▦",  label:"Dashboard"},
-    {id:"log",           icon:"➕", label:"เพิ่มงาน"},
-    {id:"logs",          icon:"≡",  label:"รายการงาน",  badge:logs.length},
-    {id:"projects",      icon:"📁", label:"Projects"},
-    {id:"calendar",      icon:"📅", label:"Calendar"},
-    {id:"reports",       icon:"📊", label:"Reports"},
-    {id:"ai-assistant",  icon:"🤖", label:"AI Assistant"},
-    {id:"export",        icon:"📥", label:"Export Center"},
-    {id:"presentation",  icon:"🎬", label:"Presentation Studio"},
-    {id:"gallery",       icon:"🖼", label:"Gallery"},
-    {id:"portfolio",     icon:"◈",  label:"Portfolio"},
+    {id:"dashboard",        icon:"▦",  label:"Dashboard"},
+    {id:"log",              icon:"➕", label:"เพิ่มงาน"},
+    {id:"logs",             icon:"≡",  label:"รายการงาน",  badge:logs.length},
+    {id:"projects",         icon:"📁", label:"Projects"},
+    {id:"calendar",         icon:"📅", label:"Calendar"},
+    {id:"reports",          icon:"📊", label:"Reports"},
+    {id:"ai-assistant",     icon:"🤖", label:"AI Assistant"},
+    {id:"export",           icon:"📥", label:"Export Center"},
+    {id:"presentation",     icon:"🎬", label:"Presentation Studio"},
+    {id:"gallery",          icon:"🖼", label:"Gallery"},
+    {id:"portfolio",        icon:"◈",  label:"Portfolio"},
+    {id:"line-integration", icon:"💬", label:"LINE Integration"},
   ]
 
   const quickActions=[
     {id:"report",       icon:"✨", label:"Generate Report",   action:()=>setShowReport(true)},
+    {id:"categories",   icon:"🏷️", label:"จัดการหมวดหมู่",    action:()=>setShowCatManager(true)},
     {id:"export-pdf",   icon:"📥", label:"Export PDF",         action:()=>showT("📥 Export — Phase E")},
     {id:"slides",       icon:"🎬", label:"Create Slides",       action:()=>setPage("presentation")},
     {id:"ai-sum",       icon:"🧠", label:"AI Summary",          action:()=>setPage("ai-assistant")},
     {id:"add",          icon:"➕", label:"Add Task",             action:()=>{setEditLog(null);setShowForm(true);setPage("log")}},
   ]
+
+  // Auth guard
+  if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#6C63FF'}}>✨ กำลังโหลด...</div>
 
   // Page title
   const pageTitle = mainNav.find(n=>n.id===page)?.label||"Dashboard"
@@ -1935,7 +1959,7 @@ export default function App(){
       case "gallery":
   return <GalleryPageFull logs={logs} />
       case "portfolio":   return <PortfolioPage logs={logs}/>
-      case "projects":    return <ComingSoonPage icon="📁" title="Projects" desc="จัดการโปรเจกต์ทั้งหมดในที่เดียว แบ่งงานตาม client หรือ project ได้" features={["Project Board","Client Management","Deadline Tracking","Team Assignment"]}/>
+      case "projects":    return <ProjectsPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onNavigate={goPage}/>
       case "calendar":
   return (
     <CalendarPage
@@ -1957,7 +1981,7 @@ export default function App(){
       }}
     />
   )
-      case "reports":     return <ComingSoonPage icon="📊" title="Reports" desc="รายงานสรุปผลงานรายเดือนและรายปี พร้อม AI วิเคราะห์เชิงลึก" features={["Monthly Report","Yearly Summary","KPI Analysis","AI Insights"]}/>
+      case "reports":     return <ReportsPage logs={logs} onReport={()=>setShowReport(true)} onNavigate={goPage}/>
       case "ai-assistant":
   return (
     <AIAssistantPage
@@ -1975,6 +1999,7 @@ export default function App(){
       }}
     />
   )
+      case "line-integration": return <LINEIntegrationPage onNavigate={goPage}/>
       case "export":
   return (
     <div style={{maxWidth:600}}>
@@ -2072,22 +2097,18 @@ export default function App(){
           <div className="content">{renderPage()}</div>
         </div>
 
-        {/* ── Mobile Bottom Navigation ── */}
-        <div className="mob-nav">
-          <button className="mob-nav-item" onClick={()=>goPage("dashboard")}>
-            <span className="ni">▦</span><span>Dashboard</span>
-          </button>
-          <button className="mob-nav-item" onClick={()=>goPage("logs")}>
-            <span className="ni">≡</span><span>งาน{logs.length>0&&<> ({logs.length})</>}</span>
-          </button>
-          <button className="mob-nav-fab" onClick={()=>goPage("log")}>＋</button>
-          <button className="mob-nav-item" onClick={()=>goPage("calendar")}>
-            <span className="ni">📅</span><span>Calendar</span>
-          </button>
-          <button className="mob-nav-item" onClick={()=>setMobMenu(true)}>
-            <span className="ni">☰</span><span>เมนู</span>
-          </button>
-        </div>
+        {/* ── Mobile Bottom Navigation (component) ── */}
+        <MobileNav
+          currentPage={page}
+          onNavigate={goPage}
+          onAction={(action)=>{
+            if(action==='report') setShowReport(true)
+            else if(action==='export-pdf') goPage('export')
+            else if(action==='slides') goPage('presentation')
+            else if(action==='ai-summary') goPage('ai-assistant')
+          }}
+          logCount={logs.length}
+        />
 
         {/* ── Mobile Bottom Sheet Menu ── */}
         {mobMenu&&(
@@ -2121,10 +2142,157 @@ export default function App(){
         {showReport&&<ReportModal logs={logs} onClose={()=>setShowReport(false)}/>}
         {showCmd&&<CommandPalette onClose={()=>setShowCmd(false)} onAction={handleCmdAction}/>}
         {toast&&<div className="toast"><span>✦</span>{toast}</div>}
+        {/* Category Manager Modal */}
+        {showCatManager&&(
+          <div className="modal-wrap" onClick={()=>setShowCatManager(false)}>
+            <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:500}}>
+              <CategoryManager onClose={()=>setShowCatManager(false)}/>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Show hamburger on mobile via inline style override */}
       <style>{`@media(max-width:768px){.mob-hamburger{display:flex!important}}`}</style>
     </>
+  )
+}
+
+// ─────────────────────────────────────────
+// PROJECTS PAGE — simple kanban by category
+// ─────────────────────────────────────────
+function ProjectsPage({ logs, onAdd, onNavigate }) {
+  const [filter, setFilter] = useState('all')
+  const stats = {}
+  logs.forEach(l => {
+    if (!stats[l.category]) stats[l.category] = { done:0, wip:0, draft:0, hours:0 }
+    stats[l.category][l.status === 'done' ? 'done' : l.status === 'in_progress' ? 'wip' : 'draft']++
+    stats[l.category].hours += (l.hours || 0)
+  })
+
+  const STATUS_CFG = {
+    done:        { label:'เสร็จแล้ว', color:'#10B981', bg:'rgba(16,185,129,0.1)' },
+    in_progress: { label:'กำลังทำ',   color:'#F59E0B', bg:'rgba(245,158,11,0.1)' },
+    draft:       { label:'ร่าง',       color:'#6C63FF', bg:'rgba(108,99,255,0.1)' },
+  }
+
+  const categories = Object.keys(stats)
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:'var(--text)'}}>Projects</div>
+          <div style={{fontSize:12,color:'var(--text3)'}}>ภาพรวมตามหมวดหมู่ · {categories.length} หมวดหมู่</div>
+        </div>
+        <button onClick={onAdd} className="btn btn-primary btn-sm">+ เพิ่มงาน</button>
+      </div>
+
+      {categories.length === 0 ? (
+        <div className="empty"><div style={{fontSize:40,marginBottom:12}}>📁</div><div>ยังไม่มีงานในระบบ</div><button onClick={onAdd} className="btn btn-primary" style={{marginTop:12}}>+ เพิ่มงานแรก</button></div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14}}>
+          {categories.map(catId => {
+            const cat = logs.find(l => l.category === catId)
+            const s = stats[catId]
+            const total = s.done + s.wip + s.draft
+            const pct = total > 0 ? Math.round(s.done / total * 100) : 0
+            const catLogs = logs.filter(l => l.category === catId).slice(0,3)
+            return (
+              <div key={catId} className="card" style={{cursor:'pointer'}} onClick={()=>onNavigate('logs')}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:14,color:'var(--text)',textTransform:'capitalize'}}>{catId}</div>
+                  <div style={{fontSize:11,color:'var(--text3)'}}>{s.hours} ชม.</div>
+                </div>
+                {/* Progress bar */}
+                <div style={{height:4,background:'rgba(108,99,255,0.1)',borderRadius:2,overflow:'hidden',marginBottom:10}}>
+                  <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#6C63FF,#9B8FFF)',borderRadius:2,transition:'.3s'}}/>
+                </div>
+                <div style={{display:'flex',gap:8,marginBottom:12}}>
+                  {Object.entries(STATUS_CFG).map(([k,cfg]) => (
+                    <div key={k} style={{flex:1,background:cfg.bg,borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
+                      <div style={{fontSize:14,fontWeight:700,color:cfg.color}}>{s[k==='done'?'done':k==='in_progress'?'wip':'draft']}</div>
+                      <div style={{fontSize:9,color:cfg.color}}>{cfg.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Recent logs */}
+                {catLogs.map(l => (
+                  <div key={l.id} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:'0.5px solid rgba(0,0,0,0.05)'}}>
+                    <div style={{width:6,height:6,borderRadius:'50%',background:STATUS_CFG[l.status]?.color||'#9ca3af',flexShrink:0}}/>
+                    <div style={{fontSize:12,color:'var(--text2)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.title}</div>
+                    <div style={{fontSize:10,color:'var(--text3)'}}>{l.hours}h</div>
+                  </div>
+                ))}
+                {total > 3 && <div style={{fontSize:11,color:'var(--accent)',marginTop:6,textAlign:'center'}}>+{total-3} งานเพิ่มเติม</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────
+// REPORTS PAGE
+// ─────────────────────────────────────────
+function ReportsPage({ logs, onReport, onNavigate }) {
+  const stats = {
+    total: logs.length,
+    hours: logs.reduce((s,l) => s+(l.hours||0), 0),
+    done:  logs.filter(l => l.status==='done').length,
+    cats:  [...new Set(logs.map(l=>l.category))].length,
+  }
+  const byMonth = {}
+  logs.forEach(l => {
+    const m = (l.date||'').slice(0,7)
+    if (!m) return
+    if (!byMonth[m]) byMonth[m] = { count:0, hours:0 }
+    byMonth[m].count++; byMonth[m].hours += (l.hours||0)
+  })
+  const months = Object.entries(byMonth).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6)
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:'var(--text)'}}>Reports</div>
+          <div style={{fontSize:12,color:'var(--text3)'}}>สรุปผลงานของคุณ</div>
+        </div>
+        <button onClick={onReport} className="btn btn-primary btn-sm">📄 Export PDF</button>
+      </div>
+
+      {/* KPI */}
+      <div className="kpi-grid" style={{marginBottom:20}}>
+        {[
+          {label:'งานทั้งหมด', value:stats.total, unit:'งาน', color:'#6C63FF'},
+          {label:'ชั่วโมงรวม', value:stats.hours, unit:'ชม.', color:'#06B6D4'},
+          {label:'งานเสร็จ',   value:stats.done,  unit:'งาน', color:'#10B981'},
+          {label:'หมวดหมู่',   value:stats.cats,  unit:'หมวด', color:'#F59E0B'},
+        ].map(k => (
+          <div key={k.label} className="kpi">
+            <div className="kpi-label">{k.label}</div>
+            <div className="kpi-value" style={{color:k.color}}>{k.value}<span style={{fontSize:13,fontWeight:400,color:'var(--text3)',marginLeft:4}}>{k.unit}</span></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Monthly breakdown */}
+      <div className="card">
+        <div className="section-header"><div className="section-title">สรุปรายเดือน</div></div>
+        {months.length === 0 ? (
+          <div style={{textAlign:'center',padding:20,color:'var(--text3)',fontSize:13}}>ยังไม่มีข้อมูล</div>
+        ) : months.map(([month, data]) => (
+          <div key={month} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'0.5px solid rgba(0,0,0,0.05)'}}>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',minWidth:70}}>{month}</div>
+            <div style={{flex:1,height:6,background:'rgba(108,99,255,0.1)',borderRadius:3,overflow:'hidden'}}>
+              <div style={{height:'100%',width:Math.min(data.count/stats.total*100,100)+'%',background:'linear-gradient(90deg,#6C63FF,#9B8FFF)',borderRadius:3}}/>
+            </div>
+            <div style={{fontSize:12,color:'var(--text3)',minWidth:60,textAlign:'right'}}>{data.count} งาน · {data.hours} ชม.</div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

@@ -2011,8 +2011,8 @@ export default function App(){
         <div className="sb">
           <div className="sb-logo">
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div className="logo-mark">✦</div>
-              <div><div className="logo-name">WorkLog AI</div><div className="logo-sub">SaaS Platform</div></div>
+              <div className="logo-mark" style={{padding:0,overflow:"hidden"}}><img src="/Stayscape.png" alt="StayScape" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"inherit"}}/></div>
+              <div><div className="logo-name">StayScape</div><div className="logo-sub">Work · Life · Balance</div></div>
             </div>
           </div>
           <button className="sb-search" onClick={()=>setShowCmd(true)}>
@@ -2057,7 +2057,7 @@ export default function App(){
         <div className="main">
           <div className="topbar">
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span className="breadcrumb">WorkLog</span>
+              <span className="breadcrumb">StayScape</span>
               <span style={{color:"var(--text3)",fontSize:13}}>/</span>
               <span style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{showForm?(editLog?"แก้ไขงาน":"เพิ่มงาน"):pageTitle}</span>
             </div>

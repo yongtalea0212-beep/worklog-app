@@ -941,9 +941,13 @@ const CMD_ITEMS = [
 // ─────────────────────────────────────────
 // UTILS
 // ─────────────────────────────────────────
-const getCat = id => {
-  const allCats = (typeof DYNAMIC_CATS !== 'undefined' && Array.isArray(DYNAMIC_CATS) && DYNAMIC_CATS.length > 0) ? DYNAMIC_CATS : CATS
-  return allCats.find(c=>c.id===id) || allCats[allCats.length-1] || {id:'other',label:'Other',icon:'📌',color:'#9ca3af',bg:'rgba(156,163,175,0.1)'}
+const FALLBACK_CAT = {id:'other',label:'Other',icon:'📌',color:'#9ca3af',bg:'rgba(156,163,175,0.1)'}
+const getCat = (id, dynCats) => {
+  // Use dynCats if passed, else try global cache, else CATS
+  const pool = (Array.isArray(dynCats) && dynCats.length > 0) ? dynCats
+    : (typeof window !== 'undefined' && Array.isArray(window.__stayscapeCats) && window.__stayscapeCats.length > 0) ? window.__stayscapeCats
+    : CATS
+  return pool.find(c=>c.id===id) || pool[pool.length-1] || FALLBACK_CAT
 }
 const fmtDate = s => new Date(s).toLocaleDateString("th-TH",{day:"numeric",month:"short"})
 const today = () => new Date().toISOString().split("T")[0]
@@ -1803,6 +1807,8 @@ export default function App(){
   const [authLoading,setAuthLoading]=useState(true)
   const [showCatManager,setShowCatManager]=useState(false)
   const { cats:DYNAMIC_CATS = [] } = useCategories()
+  // Cache for module-level getCat
+  if(typeof window !== 'undefined' && DYNAMIC_CATS.length > 0) window.__stayscapeCats = DYNAMIC_CATS
 
   useEffect(()=>{
     const check=()=>setIsMobile(window.innerWidth<=768)

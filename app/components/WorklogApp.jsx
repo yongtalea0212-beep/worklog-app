@@ -1804,7 +1804,6 @@ export default function App(){
   const [mobMenu,setMobMenu]=useState(false)
   const [isMobile,setIsMobile]=useState(false)
   const [user,setUser]=useState(null)
-  const [authLoading,setAuthLoading]=useState(true)
   const [showCatManager,setShowCatManager]=useState(false)
   const { cats:DYNAMIC_CATS = [] } = useCategories()
   // Cache for module-level getCat
@@ -1819,13 +1818,21 @@ export default function App(){
 
   // Auth state listener
   useEffect(()=>{
-    // onAuthStateChange fires immediately with current session
+    // Always resolve within 3s even if Supabase fails
+    const timeout = setTimeout(() => setAuthLoading(false), 3000)
+    supabase.auth.getSession()
+      .then(({data}) => {
+        setUser(data?.session?.user || null)
+        setAuthLoading(false)
+        clearTimeout(timeout)
+      })
+      .catch(() => {
+        setAuthLoading(false)
+        clearTimeout(timeout)
+      })
     const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
       setUser(session?.user||null)
-      setAuthLoading(false)
     })
-    // Fallback: if onAuthStateChange doesn't fire within 2s
-    const timeout = setTimeout(() => setAuthLoading(false), 2000)
     return()=>{ subscription.unsubscribe(); clearTimeout(timeout) }
   },[])
 
@@ -1919,16 +1926,7 @@ export default function App(){
   ]
 
   // Auth guard
-  if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#6C63FF'}}>✨ กำลังโหลด...</div>
-  if(!user) {
-    if(typeof window!=='undefined') {
-      // ป้องกัน redirect ซ้ำ ถ้าอยู่ที่ /login อยู่แล้ว
-      if(!window.location.pathname.includes('/login')) {
-        window.location.href='/login'
-      }
-    }
-    return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#9ca3af'}}>กำลังไปหน้า Login...</div>
-  }
+  
 
   // Page title
   const pageTitle = mainNav.find(n=>n.id===page)?.label||"Dashboard"

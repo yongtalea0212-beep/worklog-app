@@ -941,7 +941,10 @@ const CMD_ITEMS = [
 // ─────────────────────────────────────────
 // UTILS
 // ─────────────────────────────────────────
-const getCat = id => CATS.find(c=>c.id===id)||CATS[7]
+const getCat = id => {
+  const allCats = (typeof DYNAMIC_CATS !== 'undefined' && Array.isArray(DYNAMIC_CATS) && DYNAMIC_CATS.length > 0) ? DYNAMIC_CATS : CATS
+  return allCats.find(c=>c.id===id) || allCats[allCats.length-1] || {id:'other',label:'Other',icon:'📌',color:'#9ca3af',bg:'rgba(156,163,175,0.1)'}
+}
 const fmtDate = s => new Date(s).toLocaleDateString("th-TH",{day:"numeric",month:"short"})
 const today = () => new Date().toISOString().split("T")[0]
 
@@ -1799,7 +1802,7 @@ export default function App(){
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
   const [showCatManager,setShowCatManager]=useState(false)
-  const { cats:DYNAMIC_CATS } = useCategories()
+  const { cats:DYNAMIC_CATS = [] } = useCategories()
 
   useEffect(()=>{
     const check=()=>setIsMobile(window.innerWidth<=768)

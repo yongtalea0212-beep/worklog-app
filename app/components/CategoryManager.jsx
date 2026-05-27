@@ -55,19 +55,30 @@ export function useCategories() {
 
   async function loadCats() {
     try {
-      // Try localStorage first (instant)
+      // Try localStorage first (instant, no network)
       const saved = localStorage.getItem('stayscape_categories')
-      if (saved) { setCats(JSON.parse(saved)); setLoaded(true); return }
-      // Then try Supabase
-      const { data } = await supabase.from('categories').select('*').order('sort_order')
-      if (data?.length) {
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCats(parsed); setLoaded(true); return
+        }
+      }
+      // Try Supabase — but don't crash if table doesn't exist
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, label, icon, color, bg')
+        .order('label')
+      if (!error && Array.isArray(data) && data.length > 0) {
         const mapped = data.map(d => ({
-          id: d.id, label: d.label, icon: d.icon,
-          color: d.color, bg: d.bg || d.color + '20',
+          id: String(d.id), label: String(d.label || ''),
+          icon: String(d.icon || '📌'),
+          color: String(d.color || '#6C63FF'),
+          bg: String(d.bg || (d.color || '#6C63FF') + '20'),
         }))
         setCats(mapped)
         localStorage.setItem('stayscape_categories', JSON.stringify(mapped))
       }
+      // If error (table not found etc.) — silently use DEFAULT_CATS
     } catch {}
     setLoaded(true)
   }
@@ -146,11 +157,12 @@ function CategoryForm({ initial, onSave, onCancel }) {
       icon, color, bg,
     }
     try {
-      // Save to Supabase
+      // Try Supabase (table may not exist yet — that's OK)
+      const row = { id: cat.id, label: cat.label, icon: cat.icon, color: cat.color, bg: cat.bg }
       if (initial?.id) {
-        await supabase.from('categories').upsert({ id: cat.id, label: cat.label, icon: cat.icon, color: cat.color, bg: cat.bg })
+        await supabase.from('categories').upsert(row)
       } else {
-        await supabase.from('categories').insert({ id: cat.id, label: cat.label, icon: cat.icon, color: cat.color, bg: cat.bg })
+        await supabase.from('categories').insert(row)
       }
     } catch {}
     // Always save to localStorage

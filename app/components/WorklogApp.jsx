@@ -949,7 +949,7 @@ const getCat = (id, dynCats) => {
     : CATS
   return pool.find(c=>c.id===id) || pool[pool.length-1] || FALLBACK_CAT
 }
-const fmtDate = s => new Date(s).toLocaleDateString("th-TH",{day:"numeric",month:"short"})
+const fmtDate = s => { try { const d = new Date(s); return isNaN(d) ? "-" : d.toLocaleDateString("th-TH",{day:"numeric",month:"short"}) } catch { return "-" } }
 const today = () => new Date().toISOString().split("T")[0]
 
 function getStats(logs){
@@ -959,7 +959,8 @@ function getStats(logs){
   const topCat=Object.entries(byCategory).sort((a,b)=>b[1]-a[1])[0]
   const completionRate=total>0?Math.round((logs.filter(l=>l.status==="done").length/total)*100):0
   const avgHours=total>0?Math.round((hours/total)*10)/10:0
-  return{total,hours,byCategory,topCat:topCat?getCat(topCat[0]):null,completionRate,avgHours}
+  const topCatObj = topCat ? getCat(topCat[0]) : null
+  return{total,hours,byCategory,topCat:topCatObj,completionRate,avgHours}
 }
 
 function getWeeklyData(logs){
@@ -1819,14 +1820,22 @@ export default function App(){
 
   // Auth state listener
   useEffect(()=>{
-    supabase.auth.getSession().then(({data})=>{
-      setUser(data.session?.user||null)
-      setAuthLoading(false)
-    })
+    // Always resolve within 3s even if Supabase fails
+    const timeout = setTimeout(() => setAuthLoading(false), 3000)
+    supabase.auth.getSession()
+      .then(({data}) => {
+        setUser(data?.session?.user || null)
+        setAuthLoading(false)
+        clearTimeout(timeout)
+      })
+      .catch(() => {
+        setAuthLoading(false)
+        clearTimeout(timeout)
+      })
     const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
       setUser(session?.user||null)
     })
-    return()=>subscription.unsubscribe()
+    return()=>{ subscription.unsubscribe(); clearTimeout(timeout) }
   },[])
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }

@@ -8,7 +8,6 @@ import AIAssistantPage from './AIAssistantPage'
 import SmartProductivityPanel from './SmartProductivityPanel'
 import SmartWorklogWorkspace from './SmartWorklogWorkspace'
 import PresentationStudio from './PresentationStudio'
-import LINEIntegrationPage from './LINEIntegrationPage'
 import MobileNav from './MobileNav'
 import CategoryManager, { useCategories } from './CategoryManager'
 import {
@@ -1605,7 +1604,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
       {/* Category filter pills */}
       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18,overflowX:"auto"}}>
         <button className={`pill ${catFilter==="all"?"on":""}`} onClick={()=>setCatFilter("all")}>ทั้งหมด</button>
-        {CATS.map(c=><button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>)}
+        {(window.__stayscapeCats||CATS).map(c=><button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>)}
       </div>
 
       {sorted.length===0
@@ -1915,7 +1914,7 @@ export default function App(){
     {id:"presentation",     icon:"🎬", label:"Presentation Studio"},
     {id:"gallery",          icon:"🖼", label:"Gallery"},
     {id:"portfolio",        icon:"◈",  label:"Portfolio"},
-    {id:"line-integration", icon:"💬", label:"LINE Integration"},
+
   ]
 
   const quickActions=[
@@ -1929,6 +1928,10 @@ export default function App(){
 
   // Auth guard
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#6C63FF'}}>✨ กำลังโหลด...</div>
+  if(!user) {
+    if(typeof window!=='undefined') window.location.href='/login'
+    return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#9ca3af'}}>กำลังไปหน้า Login...</div>
+  }
 
   // Page title
   const pageTitle = mainNav.find(n=>n.id===page)?.label||"Dashboard"
@@ -2017,7 +2020,6 @@ export default function App(){
       }}
     />
   )
-      case "line-integration": return <LINEIntegrationPage onNavigate={goPage}/>
       case "export":
   return (
     <div style={{maxWidth:600}}>

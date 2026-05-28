@@ -1604,7 +1604,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
       {/* Category filter pills */}
       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18,overflowX:"auto"}}>
         <button className={`pill ${catFilter==="all"?"on":""}`} onClick={()=>setCatFilter("all")}>ทั้งหมด</button>
-        {(window.__stayscapeCats||CATS).map(c=><button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>)}
+        {(typeof window!=='undefined'&&window.__stayscapeCats?.length?window.__stayscapeCats:CATS).map(c=>(<button key={c.id} className={`pill ${catFilter===c.id?'on':''}`} onClick={e=>{e.preventDefault();e.stopPropagation();setCatFilter(c.id)}}>{c.icon} {c.label}</button>))}
       </div>
 
       {sorted.length===0
@@ -1861,7 +1861,9 @@ export default function App(){
 
   useEffect(()=>{
     async function load(){
-      const{data,error}=await supabase.from('work_logs').select('*').order('date',{ascending:false})
+      const uid=(await supabase.auth.getUser()).data?.user?.id
+      if(!uid){setLogs(SAMPLE);return}
+      const{data,error}=await supabase.from('work_logs').select('*').eq('user_id',uid).order('date',{ascending:false})
       if(error||!data?.length){setLogs(SAMPLE);return}
       setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[]})))
     }
@@ -1880,7 +1882,9 @@ export default function App(){
   // Upload images to Supabase Storage ถ้ายังไม่ได้ upload
   let finalImageUrls = form.imageUrls || []
 
+  const uid=(await supabase.auth.getUser()).data?.user?.id
   const d = {
+    user_id:     uid,
     title:       form.title,
     description: form.description || '',
     ai_summary:  form.aiSummary || '',
@@ -1889,7 +1893,7 @@ export default function App(){
     status:      form.status,
     tags:        form.tags || [],
     date:        form.date,
-    image_urls:  finalImageUrls,   // ← save URL ลง DB
+    image_urls:  finalImageUrls,
   }
 
   if (editLog) {
@@ -2118,12 +2122,24 @@ export default function App(){
           </div>
           <div className="sb-foot">
             <div className="sb-user">
-              <div className="sb-avatar">W</div>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>WorkLog User</div>
-                <div style={{fontSize:10,color:"var(--text3)"}}>Pro Plan · Active</div>
+              <div className="sb-avatar" style={{background:"linear-gradient(135deg,#6C63FF,#9B8FFF)",overflow:"hidden",flexShrink:0}}>
+                {user?.user_metadata?.line_picture_url
+                  ? <img src={user.user_metadata.line_picture_url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>
+                  : (user?.email?.[0]||user?.user_metadata?.full_name?.[0]||"S").toUpperCase()
+                }
               </div>
-              <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--text3)",padding:"4px",borderRadius:6}} title="ออกจากระบบ">↩</button>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {user?.user_metadata?.line_display_name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"User"}
+                </div>
+                <div style={{fontSize:10,color:"var(--text3)"}}>
+                  {user?.app_metadata?.provider==="google"?"🟢 Google":user?.user_metadata?.line_user_id?"🟢 LINE":"🟢 Active"}
+                </div>
+              </div>
+              <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}}
+                style={{marginLeft:"auto",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.15)",cursor:"pointer",fontSize:11,color:"#EF4444",padding:"4px 8px",borderRadius:6,fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+                ออกจากระบบ
+              </button>
             </div>
           </div>
         </div>

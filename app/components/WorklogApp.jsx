@@ -1604,9 +1604,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
       {/* Category filter pills */}
       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18,overflowX:"auto"}}>
         <button className={`pill ${catFilter==="all"?"on":""}`} onClick={()=>setCatFilter("all")}>ทั้งหมด</button>
-        {(typeof window!=='undefined'&&window.__stayscapeCats?.length?window.__stayscapeCats:CATS).map(c=>(
-          <button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={e=>{e.preventDefault();e.stopPropagation();setCatFilter(c.id)}}>{c.icon} {c.label}</button>
-        ))}
+        {(window.__stayscapeCats||CATS).map(c=><button key={c.id} className={`pill ${catFilter===c.id?"on":""}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>)}
       </div>
 
       {sorted.length===0
@@ -1806,6 +1804,7 @@ export default function App(){
   const [mobMenu,setMobMenu]=useState(false)
   const [isMobile,setIsMobile]=useState(false)
   const [user,setUser]=useState(null)
+  const [authLoading,setAuthLoading]=useState(true)
   const [showCatManager,setShowCatManager]=useState(false)
   const { cats:DYNAMIC_CATS = [] } = useCategories()
   // Cache for module-level getCat
@@ -1818,42 +1817,51 @@ export default function App(){
     return()=>window.removeEventListener('resize',check)
   },[])
 
-  // Auth state listener + auto logout after 30min
+  // Auth — getSession first (no flash), then listen for changes
   useEffect(()=>{
-    const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
-      setUser(session?.user||null)
+    let mounted = true
+    // Step 1: get current session immediately
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setUser(data?.session?.user || null)
       setAuthLoading(false)
+    }).catch(() => {
+      if (mounted) setAuthLoading(false)
     })
-    const fallback = setTimeout(()=>setAuthLoading(false), 2000)
-
-    // Auto logout after 30 min inactivity
+    // Step 2: listen for changes (logout, token refresh)
+    // IMPORTANT: skipInitial=true to avoid overwriting Step 1 result with null
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return
+      // Only update on real events, not the initial INITIAL_SESSION
+      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setUser(session?.user || null)
+      }
+    })
+    // Auto logout after 30min inactivity
     let timer
-    const resetTimer = () => {
+    const reset = () => {
       clearTimeout(timer)
       timer = setTimeout(async () => {
         await supabase.auth.signOut()
         window.location.href = '/login'
       }, 30 * 60 * 1000)
     }
-    const events = ['mousedown','keydown','scroll','touchstart']
-    events.forEach(e => window.addEventListener(e, resetTimer))
-    resetTimer()
-
-    return()=>{
+    const evts = ['mousedown','keydown','scroll','touchstart','click']
+    evts.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => {
+      mounted = false
       subscription.unsubscribe()
-      clearTimeout(fallback)
       clearTimeout(timer)
-      events.forEach(e => window.removeEventListener(e, resetTimer))
+      evts.forEach(e => window.removeEventListener(e, reset))
     }
-  },[])
+  }, [])
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
 
   useEffect(()=>{
     async function load(){
-      const uid = (await supabase.auth.getUser()).data?.user?.id
-      if(!uid) return
-      const{data,error}=await supabase.from('work_logs').select('*').eq('user_id',uid).order('date',{ascending:false})
+      const{data,error}=await supabase.from('work_logs').select('*').order('date',{ascending:false})
       if(error||!data?.length){setLogs(SAMPLE);return}
       setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[]})))
     }
@@ -1872,9 +1880,7 @@ export default function App(){
   // Upload images to Supabase Storage ถ้ายังไม่ได้ upload
   let finalImageUrls = form.imageUrls || []
 
-  const uid = (await supabase.auth.getUser()).data?.user?.id
   const d = {
-    user_id:     uid,
     title:       form.title,
     description: form.description || '',
     ai_summary:  form.aiSummary || '',
@@ -1883,7 +1889,7 @@ export default function App(){
     status:      form.status,
     tags:        form.tags || [],
     date:        form.date,
-    image_urls:  finalImageUrls,
+    image_urls:  finalImageUrls,   // ← save URL ลง DB
   }
 
   if (editLog) {
@@ -1941,9 +1947,19 @@ export default function App(){
   ]
 
   // Auth guard
-  if(!user){
-    if(typeof window!=='undefined'&&!window.location.pathname.includes('/login')) window.location.href='/login'
-    return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',fontFamily:'Inter,sans-serif',fontSize:14,color:'#9ca3af'}}>กำลังไปหน้า Login...</div>
+  
+
+  // Auth guard
+  if (authLoading) return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',
+      background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',
+      fontFamily:'Inter,sans-serif',fontSize:14,color:'#6C63FF'}}>
+      ✨ กำลังโหลด StayScape...
+    </div>
+  )
+  if (!user) {
+    if (typeof window !== 'undefined') window.location.href = '/login'
+    return null
   }
 
   // Page title
@@ -2101,34 +2117,13 @@ export default function App(){
             <div style={{fontSize:11,color:"var(--text3)"}}>PDF · PPT · Portfolio</div>
           </div>
           <div className="sb-foot">
-            <div className="sb-user" style={{cursor:'default'}}>
-              {/* Avatar */}
-              <div className="sb-avatar" style={{
-                background: user?.user_metadata?.line_picture_url ? 'none' : 'linear-gradient(135deg,#6C63FF,#9B8FFF)',
-                overflow:'hidden', flexShrink:0,
-              }}>
-                {user?.user_metadata?.line_picture_url
-                  ? <img src={user.user_metadata.line_picture_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>
-                  : (user?.email?.[0]||user?.user_metadata?.line_display_name?.[0]||'S').toUpperCase()
-                }
+            <div className="sb-user">
+              <div className="sb-avatar">W</div>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>WorkLog User</div>
+                <div style={{fontSize:10,color:"var(--text3)"}}>Pro Plan · Active</div>
               </div>
-              {/* Info */}
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:"var(--text)",overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                  {user?.user_metadata?.line_display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'User'}
-                </div>
-                <div style={{fontSize:10,color:"var(--text3)"}}>
-                  {user?.app_metadata?.provider === 'anonymous' ? '🟢 LINE · Active'
-                    : user?.app_metadata?.provider === 'google' ? '🟢 Google · Active'
-                    : '🟢 Email · Active'}
-                </div>
-              </div>
-              {/* Logout */}
-              <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}}
-                style={{marginLeft:"auto",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.15)",cursor:"pointer",fontSize:11,color:"#EF4444",padding:"4px 8px",borderRadius:6,fontFamily:"inherit",flexShrink:0}}
-                title="ออกจากระบบ">
-                ออก
-              </button>
+              <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--text3)",padding:"4px",borderRadius:6}} title="ออกจากระบบ">↩</button>
             </div>
           </div>
         </div>

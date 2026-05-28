@@ -4,16 +4,23 @@ import { useState, useEffect, useRef } from 'react'
 // ─────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────
-const CATS = [
-  { id:'graphic',   label:'Graphic Design', color:'#6C63FF', bg:'rgba(108,99,255,0.1)',  icon:'🎨' },
-  { id:'video',     label:'Video Editing',  color:'#06B6D4', bg:'rgba(6,182,212,0.1)',   icon:'🎬' },
-  { id:'photo',     label:'Photography',    color:'#F59E0B', bg:'rgba(245,158,11,0.1)',  icon:'📷' },
-  { id:'marketing', label:'Marketing',      color:'#EF4444', bg:'rgba(239,68,68,0.1)',   icon:'📢' },
-  { id:'ai',        label:'AI Content',     color:'#8B5CF6', bg:'rgba(139,92,246,0.1)',  icon:'🤖' },
-  { id:'branding',  label:'Branding',       color:'#EC4899', bg:'rgba(236,72,153,0.1)',  icon:'✨' },
-  { id:'pos',       label:'POS Design',     color:'#10B981', bg:'rgba(16,185,129,0.1)',  icon:'🏪' },
-  { id:'other',     label:'อื่นๆ',          color:'#64748B', bg:'rgba(100,116,139,0.1)', icon:'📌' },
+const DEFAULT_CATS_WW = [
+  { id:'graphic',   label:'Graphic Design', icon:'🎨', color:'#6C63FF', bg:'rgba(108,99,255,0.1)' },
+  { id:'video',     label:'Video Editing',  icon:'🎬', color:'#06B6D4', bg:'rgba(6,182,212,0.1)' },
+  { id:'photo',     label:'Photography',    icon:'📸', color:'#F59E0B', bg:'rgba(245,158,11,0.1)' },
+  { id:'marketing', label:'Marketing',      icon:'📢', color:'#EF4444', bg:'rgba(239,68,68,0.1)' },
+  { id:'ai',        label:'AI Content',     icon:'🤖', color:'#8B5CF6', bg:'rgba(139,92,246,0.1)' },
+  { id:'branding',  label:'Branding',       icon:'✨', color:'#EC4899', bg:'rgba(236,72,153,0.1)' },
+  { id:'pos',       label:'POS Design',     icon:'🏪', color:'#10B981', bg:'rgba(16,185,129,0.1)' },
+  { id:'other',     label:'อื่นๆ',          icon:'📌', color:'#64748B', bg:'rgba(100,116,139,0.1)' },
 ]
+const CATS = (() => {
+  try {
+    const s = typeof window !== 'undefined' ? localStorage.getItem('stayscape_categories') : null
+    if (s) { const p = JSON.parse(s); if (Array.isArray(p) && p.length) return p }
+  } catch {}
+  return DEFAULT_CATS_WW
+})()
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 const HOURS_OPT = [0.5,1,1.5,2,3,4,5,6,8]
 const today = () => new Date().toISOString().split('T')[0]

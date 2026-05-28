@@ -1603,7 +1603,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
 
       {/* Category filter pills */}
       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18,overflowX:"auto"}}>
-        <button className={`pill ${catFilter==="all"?"on":""}`} onClick={()=>setCatFilter("all")}>ทั้งหมด</button>
+        <button className={`pill ${catFilter==="all"?"on":""}`} onClick={e=>{e.preventDefault();e.stopPropagation();setCatFilter("all")}}>ทั้งหมด</button>
         {(typeof window!=='undefined'&&window.__stayscapeCats?.length?window.__stayscapeCats:CATS).map(c=>(<button key={c.id} className={`pill ${catFilter===c.id?'on':''}`} onClick={e=>{e.preventDefault();e.stopPropagation();setCatFilter(c.id)}}>{c.icon} {c.label}</button>))}
       </div>
 

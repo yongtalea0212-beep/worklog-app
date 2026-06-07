@@ -7,20 +7,24 @@ export default function LiffPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // Check cached LINE session first
-    try {
-      const cached = localStorage.getItem('lineProfile')
-      if (cached) {
-        const p = JSON.parse(cached)
-        if (p?.userId) {
-          setProfile(p)
-          setStatus('success')
-          setTimeout(() => { window.location.href = '/' }, 800)
-          return
+    // Only shortcut if BOTH a cached LINE profile AND a live Supabase session exist
+    ;(async () => {
+      try {
+        const cached = localStorage.getItem('lineProfile')
+        if (cached) {
+          const p = JSON.parse(cached)
+          const { supabase: sb } = await import('../lib/supabase')
+          const { data } = await sb.auth.getSession()
+          if (p?.userId && data?.session) {
+            setProfile(p)
+            setStatus('success')
+            setTimeout(() => { window.location.href = '/' }, 600)
+            return
+          }
         }
-      }
-    } catch {}
-    initLiff()
+      } catch {}
+      initLiff()
+    })()
   }, [])
 
   async function initLiff() {
@@ -51,28 +55,32 @@ export default function LiffPage() {
       localStorage.setItem('line_display_name', p.displayName)
       localStorage.setItem('line_picture_url', p.pictureUrl || '')
 
-      // Create Supabase anonymous session
+      // Create Supabase anonymous session using the SHARED client
+      // (must match storageKey 'stayscape-auth' so the main app sees the session)
       try {
-        const { createClient } = await import('@supabase/supabase-js')
-        const sb = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-        )
+        const { supabase: sb } = await import('../lib/supabase')
         const { data: existing } = await sb.auth.getSession()
         if (!existing?.session) {
           const { error: authErr } = await sb.auth.signInAnonymously()
-          if (!authErr) {
-            await sb.auth.updateUser({
-              data: {
-                line_user_id: p.userId,
-                line_display_name: p.displayName,
-                line_picture_url: p.pictureUrl || '',
-                provider: 'line',
-              }
-            })
-          }
+          if (authErr) throw authErr
         }
-      } catch {}
+        await sb.auth.updateUser({
+          data: {
+            line_user_id: p.userId,
+            line_display_name: p.displayName,
+            line_picture_url: p.pictureUrl || '',
+            provider: 'line',
+          }
+        })
+        // Confirm session is persisted before redirecting
+        const { data: check } = await sb.auth.getSession()
+        if (!check?.session) throw new Error('ไม่สามารถสร้างเซสชันได้ กรุณาลองใหม่')
+      } catch (e) {
+        console.error('Supabase anon session error:', e)
+        setError(e.message || 'เชื่อมต่อระบบไม่สำเร็จ')
+        setStatus('error')
+        return
+      }
 
       setStatus('success')
       setTimeout(() => {

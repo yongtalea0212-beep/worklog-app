@@ -55,9 +55,17 @@ export default function LoginPage() {
     } finally { setLoading(false) }
   }
 
+  function openInExternalBrowser() {
+    // LINE in-app browser honors openExternalBrowser=1 to escape to Safari/Chrome
+    const url = new URL(window.location.href)
+    url.searchParams.set('openExternalBrowser', '1')
+    window.location.href = url.toString()
+  }
+
   async function handleGoogle() {
     if (inApp) {
-      setError('Google ไม่รองรับการเข้าสู่ระบบในแอป LINE/Facebook — กรุณาเปิดในเบราว์เซอร์ (Safari/Chrome) หรือใช้ LINE/อีเมล')
+      // Cannot do Google OAuth inside LINE/FB webview — bounce to system browser
+      openInExternalBrowser()
       return
     }
     setLoading(true); setError('')
@@ -254,8 +262,12 @@ export default function LoginPage() {
               <div className="login-divider">หรือเข้าสู่ระบบด้วย</div>
 
               {inApp && (
-                <div style={{ background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:10, padding:'9px 12px', fontSize:11.5, color:'#B45309', marginBottom:10, lineHeight:1.5 }}>
-                  💡 คุณกำลังใช้แอปในเบราว์เซอร์ของ LINE/Facebook — Google จะใช้ไม่ได้ แนะนำให้เข้าสู่ระบบด้วย <b>LINE</b> หรือ <b>อีเมล</b>
+                <div style={{ background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:10, padding:'10px 12px', fontSize:11.5, color:'#B45309', marginBottom:10, lineHeight:1.5 }}>
+                  💡 คุณกำลังใช้แอปในเบราว์เซอร์ของ LINE/Facebook — Google จะใช้ไม่ได้ที่นี่ แนะนำให้ใช้ <b>LINE</b>, <b>อีเมล</b> หรือเปิดในเบราว์เซอร์
+                  <button type="button" onClick={openInExternalBrowser}
+                    style={{ marginTop:8, width:'100%', padding:'8px', background:'#F59E0B', border:'none', borderRadius:8, fontSize:12, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit' }}>
+                    🌐 เปิดในเบราว์เซอร์ (Safari/Chrome)
+                  </button>
                 </div>
               )}
 

@@ -1869,7 +1869,9 @@ export default function App(){
       const uid=(await supabase.auth.getUser()).data?.user?.id
       if(!uid){setLogs(SAMPLE);return}
       const{data,error}=await supabase.from('work_logs').select('*').eq('user_id',uid).order('date',{ascending:false})
-      if(error||!data?.length){setLogs(SAMPLE);return}
+      // Logged-in user with no logs → empty state (NOT the demo SAMPLE),
+      // so real data is consistent across devices for the same account.
+      if(error||!data?.length){setLogs([]);return}
       setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[]})))
     }
     load()

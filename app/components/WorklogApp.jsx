@@ -1938,6 +1938,7 @@ export default function App(){
     {id:"presentation",     icon:"🎬", label:"Presentation Studio"},
     {id:"gallery",          icon:"🖼", label:"Gallery"},
     {id:"portfolio",        icon:"◈",  label:"Portfolio"},
+    {id:"profile",          icon:"👤", label:"โปรไฟล์"},
 
   ]
 
@@ -1999,6 +2000,7 @@ export default function App(){
       case "gallery":
   return <GalleryPageFull logs={logs} />
       case "portfolio":   return <PortfolioPage logs={logs}/>
+      case "profile":     return <ProfilePage user={user} logs={logs} onLogout={async()=>{await supabase.auth.signOut();window.location.href='/login'}} onNavigate={goPage}/>
       case "projects":    return <ProjectsPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onNavigate={goPage}/>
       case "calendar":
   return (
@@ -2141,6 +2143,22 @@ export default function App(){
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <button className="btn btn-ghost btn-sm" onClick={()=>setShowCmd(true)}>⌘ Command</button>
               <button onClick={()=>{setEditLog(null);setShowForm(true);setPage("log")}} className="btn btn-primary btn-sm">+ เพิ่มงาน</button>
+              {/* Profile button — desktop */}
+              <button onClick={()=>goPage("profile")} className="desktop-only" style={{
+                display:"flex",alignItems:"center",gap:6,padding:"5px 10px",
+                background:"rgba(255,255,255,0.7)",border:"1px solid rgba(200,210,240,0.5)",
+                borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"var(--text)",
+              }}>
+                <div style={{width:22,height:22,borderRadius:"50%",background:"linear-gradient(135deg,#6C63FF,#9B8FFF)",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"white",fontWeight:700,flexShrink:0}}>
+                  {user?.user_metadata?.line_picture_url
+                    ? <img src={user.user_metadata.line_picture_url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>
+                    : (user?.email?.[0]||"U").toUpperCase()
+                  }
+                </div>
+                <span style={{maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {user?.user_metadata?.line_display_name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"User"}
+                </span>
+              </button>
               {/* Hamburger — mobile only */}
               <button onClick={()=>setMobMenu(true)} style={{display:"none",background:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.88)",borderRadius:10,width:36,height:36,alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:18}} className="mob-hamburger">☰</button>
             </div>
@@ -2185,6 +2203,36 @@ export default function App(){
                     </div>
                   </button>
                 ))}
+              </div>
+              {/* User info + logout ใน mobile sheet */}
+              <div style={{margin:'12px 0 0',padding:'12px 14px',background:'rgba(108,99,255,0.04)',borderRadius:14,border:'1px solid rgba(108,99,255,0.1)'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                  <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#6C63FF,#9B8FFF)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'white',flexShrink:0}}>
+                    {user?.user_metadata?.line_picture_url
+                      ? <img src={user.user_metadata.line_picture_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>
+                      : (user?.email?.[0]||'U').toUpperCase()
+                    }
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#1a1a2e',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {user?.user_metadata?.line_display_name||user?.user_metadata?.full_name||user?.email?.split('@')[0]||'User'}
+                    </div>
+                    <div style={{fontSize:10,color:'#9ca3af'}}>
+                      {user?.app_metadata?.provider==='google'?'🟢 Google':user?.user_metadata?.line_user_id?'🟢 LINE':'🟢 Active'}
+                    </div>
+                  </div>
+                  <button onClick={()=>{goPage('profile');setMobMenu(false)}} style={{padding:'5px 10px',background:'rgba(108,99,255,0.08)',border:'1px solid rgba(108,99,255,0.15)',borderRadius:8,fontSize:11,color:'#6C63FF',cursor:'pointer',fontFamily:'inherit',fontWeight:600,flexShrink:0}}>
+                    โปรไฟล์
+                  </button>
+                </div>
+                <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}} style={{
+                  width:'100%',padding:'10px',background:'rgba(239,68,68,0.08)',
+                  border:'1px solid rgba(239,68,68,0.15)',borderRadius:10,
+                  fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer',
+                  fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+                }}>
+                  🚪 ออกจากระบบ
+                </button>
               </div>
             </div>
           </div>
@@ -2343,6 +2391,143 @@ function ReportsPage({ logs, onReport, onNavigate }) {
             <div style={{fontSize:12,color:'var(--text3)',minWidth:60,textAlign:'right'}}>{data.count} งาน · {data.hours} ชม.</div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────
+// PROFILE PAGE
+// ─────────────────────────────────────────
+function ProfilePage({ user, logs, onLogout, onNavigate }) {
+  const [showConfirm, setShowConfirm] = React.useState(false)
+
+  const stats = {
+    total: logs.length,
+    hours: logs.reduce((s,l)=>s+(l.hours||0),0),
+    done:  logs.filter(l=>l.status==='done').length,
+    cats:  [...new Set(logs.map(l=>l.category))].length,
+  }
+
+  const displayName = user?.user_metadata?.line_display_name
+    || user?.user_metadata?.full_name
+    || user?.email?.split('@')[0]
+    || 'User'
+
+  const provider = user?.app_metadata?.provider === 'google' ? 'Google'
+    : user?.user_metadata?.line_user_id ? 'LINE'
+    : 'Email'
+
+  const providerIcon = provider === 'Google' ? '🔵' : provider === 'LINE' ? '🟢' : '📧'
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{fontSize:20,fontWeight:700,color:'var(--text)',marginBottom:20}}>โปรไฟล์</div>
+
+      {/* Profile Card */}
+      <div className="card" style={{marginBottom:16,textAlign:'center',padding:'28px 20px'}}>
+        {/* Avatar */}
+        <div style={{
+          width:80,height:80,borderRadius:'50%',
+          background:'linear-gradient(135deg,#6C63FF,#9B8FFF)',
+          overflow:'hidden',margin:'0 auto 14px',
+          border:'3px solid rgba(108,99,255,0.2)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:32,fontWeight:700,color:'white',
+        }}>
+          {user?.user_metadata?.line_picture_url
+            ? <img src={user.user_metadata.line_picture_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>
+            : displayName[0]?.toUpperCase()
+          }
+        </div>
+
+        {/* Name */}
+        <div style={{fontSize:20,fontWeight:700,color:'var(--text)',marginBottom:4}}>{displayName}</div>
+        <div style={{fontSize:13,color:'var(--text3)',marginBottom:8}}>
+          {user?.email || user?.user_metadata?.line_user_id || 'LINE User'}
+        </div>
+        <div style={{
+          display:'inline-flex',alignItems:'center',gap:6,
+          background:'rgba(108,99,255,0.08)',border:'1px solid rgba(108,99,255,0.15)',
+          borderRadius:20,padding:'4px 14px',fontSize:12,color:'#6C63FF',fontWeight:600,
+        }}>
+          {providerIcon} เข้าสู่ระบบด้วย {provider}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="kpi-grid" style={{marginBottom:16}}>
+        {[
+          {label:'งานทั้งหมด',value:stats.total,unit:'งาน',color:'#6C63FF'},
+          {label:'ชั่วโมงรวม',value:stats.hours,unit:'ชม.',color:'#06B6D4'},
+          {label:'งานเสร็จ',value:stats.done,unit:'งาน',color:'#10B981'},
+          {label:'หมวดหมู่',value:stats.cats,unit:'หมวด',color:'#F59E0B'},
+        ].map(k=>(
+          <div key={k.label} className="kpi">
+            <div className="kpi-label">{k.label}</div>
+            <div className="kpi-value" style={{color:k.color}}>
+              {k.value}<span style={{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}}>{k.unit}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Account Info */}
+      <div className="card" style={{marginBottom:16}}>
+        <div className="section-header"><div className="section-title">ข้อมูลบัญชี</div></div>
+        {[
+          {label:'ชื่อผู้ใช้',value:displayName},
+          {label:'อีเมล',value:user?.email||'-'},
+          {label:'วิธีเข้าสู่ระบบ',value:`${providerIcon} ${provider}`},
+          {label:'LINE User ID',value:user?.user_metadata?.line_user_id||'-'},
+        ].map(item=>(
+          <div key={item.label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'0.5px solid rgba(0,0,0,0.05)'}}>
+            <div style={{fontSize:13,color:'var(--text3)'}}>{item.label}</div>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',maxWidth:'60%',textAlign:'right',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="card">
+        <div className="section-header"><div className="section-title">การจัดการบัญชี</div></div>
+        <div style={{display:'flex',flexDirection:'column',gap:8,paddingTop:8}}>
+          <button onClick={()=>onNavigate('categories')} style={{
+            display:'flex',alignItems:'center',gap:12,padding:'12px 14px',
+            background:'rgba(108,99,255,0.05)',border:'1px solid rgba(108,99,255,0.12)',
+            borderRadius:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',
+          }}>
+            <span style={{fontSize:20}}>🏷️</span>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>จัดการหมวดหมู่</div>
+              <div style={{fontSize:11,color:'var(--text3)'}}>เพิ่ม แก้ไข ลบหมวดหมู่</div>
+            </div>
+          </button>
+
+          {/* Logout */}
+          {!showConfirm ? (
+            <button onClick={()=>setShowConfirm(true)} style={{
+              display:'flex',alignItems:'center',gap:12,padding:'12px 14px',
+              background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.15)',
+              borderRadius:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',
+            }}>
+              <span style={{fontSize:20}}>🚪</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:'#EF4444'}}>ออกจากระบบ</div>
+                <div style={{fontSize:11,color:'var(--text3)'}}>ออกจากบัญชีนี้</div>
+              </div>
+            </button>
+          ) : (
+            <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:13,fontWeight:600,color:'#1a1a2e',marginBottom:10}}>ยืนยันออกจากระบบ?</div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setShowConfirm(false)} style={{flex:1,padding:'9px',border:'1px solid rgba(200,210,240,0.5)',borderRadius:10,background:'rgba(255,255,255,0.6)',fontSize:13,cursor:'pointer',fontFamily:'inherit',color:'var(--text3)'}}>ยกเลิก</button>
+                <button onClick={onLogout} style={{flex:1,padding:'9px',border:'none',borderRadius:10,background:'linear-gradient(135deg,#EF4444,#F87171)',color:'white',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>ออกจากระบบ</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -1542,6 +1542,85 @@ function StatusBadge({status, size="sm"}){
   )
 }
 
+function LogCard({log, onEdit, onDelete, onStatusChange}){
+  const [exp,setExp]=useState(false)
+  const cat=getCat(log.category)
+  const st=STATUS_CFG[log.status]||STATUS_CFG.draft
+  return (
+    <div className="log-card" onClick={()=>setExp(!exp)}
+      style={{borderLeft:`3px solid ${st.dot}`, paddingLeft:0}}>
+      <div className="log-acc" style={{background:st.dot, width:3}}/>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,paddingLeft:10}}>
+
+        {/* Main content */}
+        <div style={{flex:1,minWidth:0}}>
+          {/* Title row */}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+            <span style={{fontWeight:600,fontSize:14,color:"var(--text)"}}>{log.title}</span>
+            <Badge category={log.category}/>
+            <StatusBadge status={log.status}/>
+          </div>
+
+          {/* Summary */}
+          {(log.aiSummary||log.description)&&
+            <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.55,marginBottom:6}}>
+              {log.aiSummary||log.description}
+            </div>
+          }
+
+          {/* Tags */}
+          {log.tags?.length>0&&
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {log.tags.map(t=><span key={t} className="tag-chip" style={{fontSize:10}}>#{t}</span>)}
+            </div>
+          }
+        </div>
+
+        {/* Right meta */}
+        <div style={{textAlign:"right",flexShrink:0,minWidth:52}}>
+          <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDate(log.date)}</div>
+          <div style={{fontSize:12,color:cat.color,fontWeight:700,marginTop:2}}>{log.hours} ชม.</div>
+        </div>
+      </div>
+
+      {/* Expanded actions */}
+      {exp&&(
+        <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",paddingLeft:10}}>
+          {/* Quick status change */}
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",marginBottom:6,letterSpacing:.5}}>เปลี่ยนสถานะ</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {Object.entries(STATUS_CFG).map(([k,s])=>(
+                <button key={k} onClick={e=>{
+                  e.stopPropagation()
+                  onStatusChange&&onStatusChange(log.id, k)
+                }} style={{
+                  display:"flex", alignItems:"center", gap:4,
+                  padding:"5px 10px", border:"1.5px solid",
+                  borderRadius:8, fontSize:11, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)", transition:"all .15s",
+                  borderColor: log.status===k ? s.border : "rgba(200,210,240,0.4)",
+                  background:  log.status===k ? s.bg    : "rgba(255,255,255,0.5)",
+                  color:       log.status===k ? s.color : "var(--text3)",
+                  transform:   log.status===k ? "scale(1.03)" : "scale(1)",
+                }}>
+                  {s.emoji} {s.label}
+                  {log.status===k&&<span style={{fontSize:9}}>✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Edit/Delete */}
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={e=>{e.stopPropagation();onEdit(log)}} className="btn btn-ghost btn-sm">✏️ แก้ไข</button>
+            <button onClick={e=>{e.stopPropagation();onDelete(log.id)}} className="btn btn-danger btn-sm">🗑 ลบ</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
   const [catFilter, setCatFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -1623,84 +1702,9 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
               </div>
             </div>
 
-            {dayLogs.map(log=>{
-              const [exp,setExp]=useState(false)
-              const cat=getCat(log.category)
-              const st=STATUS_CFG[log.status]||STATUS_CFG.draft
-              return (
-                <div key={log.id} className="log-card" onClick={()=>setExp(!exp)}
-                  style={{borderLeft:`3px solid ${st.dot}`, paddingLeft:0}}>
-                  <div className="log-acc" style={{background:st.dot, width:3}}/>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:10,paddingLeft:10}}>
-
-                    {/* Main content */}
-                    <div style={{flex:1,minWidth:0}}>
-                      {/* Title row */}
-                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                        <span style={{fontWeight:600,fontSize:14,color:"var(--text)"}}>{log.title}</span>
-                        <Badge category={log.category}/>
-                        <StatusBadge status={log.status}/>
-                      </div>
-
-                      {/* Summary */}
-                      {(log.aiSummary||log.description)&&
-                        <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.55,marginBottom:6}}>
-                          {log.aiSummary||log.description}
-                        </div>
-                      }
-
-                      {/* Tags */}
-                      {log.tags?.length>0&&
-                        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                          {log.tags.map(t=><span key={t} className="tag-chip" style={{fontSize:10}}>#{t}</span>)}
-                        </div>
-                      }
-                    </div>
-
-                    {/* Right meta */}
-                    <div style={{textAlign:"right",flexShrink:0,minWidth:52}}>
-                      <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDate(log.date)}</div>
-                      <div style={{fontSize:12,color:cat.color,fontWeight:700,marginTop:2}}>{log.hours} ชม.</div>
-                    </div>
-                  </div>
-
-                  {/* Expanded actions */}
-                  {exp&&(
-                    <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",paddingLeft:10}}>
-                      {/* Quick status change */}
-                      <div style={{marginBottom:10}}>
-                        <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",marginBottom:6,letterSpacing:.5}}>เปลี่ยนสถานะ</div>
-                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                          {Object.entries(STATUS_CFG).map(([k,s])=>(
-                            <button key={k} onClick={e=>{
-                              e.stopPropagation()
-                              onStatusChange&&onStatusChange(log.id, k)
-                            }} style={{
-                              display:"flex", alignItems:"center", gap:4,
-                              padding:"5px 10px", border:"1.5px solid",
-                              borderRadius:8, fontSize:11, fontWeight:600,
-                              cursor:"pointer", fontFamily:"var(--font)", transition:"all .15s",
-                              borderColor: log.status===k ? s.border : "rgba(200,210,240,0.4)",
-                              background:  log.status===k ? s.bg    : "rgba(255,255,255,0.5)",
-                              color:       log.status===k ? s.color : "var(--text3)",
-                              transform:   log.status===k ? "scale(1.03)" : "scale(1)",
-                            }}>
-                              {s.emoji} {s.label}
-                              {log.status===k&&<span style={{fontSize:9}}>✓</span>}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {/* Edit/Delete */}
-                      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                        <button onClick={e=>{e.stopPropagation();onEdit(log)}} className="btn btn-ghost btn-sm">✏️ แก้ไข</button>
-                        <button onClick={e=>{e.stopPropagation();onDelete(log.id)}} className="btn btn-danger btn-sm">🗑 ลบ</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+            {dayLogs.map(log=>(
+              <LogCard key={log.id} log={log} onEdit={onEdit} onDelete={onDelete} onStatusChange={onStatusChange}/>
+            ))}
           </div>
         ))
       }

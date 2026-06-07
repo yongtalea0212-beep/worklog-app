@@ -1950,21 +1950,7 @@ export default function App(){
     {id:"add",          icon:"➕", label:"Add Task",             action:()=>{setEditLog(null);setShowForm(true);setPage("log")}},
   ]
 
-  // Auth guard
-  
-
-  // Auth guard
-  if (authLoading) return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',
-      background:'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',
-      fontFamily:'Inter,sans-serif',fontSize:14,color:'#6C63FF'}}>
-      ✨ กำลังโหลด StayScape...
-    </div>
-  )
-  if (!user) {
-    if (typeof window !== 'undefined') window.location.href = '/login'
-    return null
-  }
+  // Auth handled by page.tsx
 
   // Page title
   const pageTitle = mainNav.find(n=>n.id===page)?.label||"Dashboard"

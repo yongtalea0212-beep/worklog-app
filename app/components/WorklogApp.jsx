@@ -1866,11 +1866,15 @@ export default function App(){
 
   useEffect(()=>{
     async function load(){
-      const uid=(await supabase.auth.getUser()).data?.user?.id
+      const authUser=(await supabase.auth.getUser()).data?.user
+      const uid=authUser?.id
+      const lineId=authUser?.user_metadata?.line_user_id
       if(!uid){setLogs(SAMPLE);return}
-      const{data,error}=await supabase.from('work_logs').select('*').eq('user_id',uid).order('date',{ascending:false})
-      // Logged-in user with no logs → empty state (NOT the demo SAMPLE),
-      // so real data is consistent across devices for the same account.
+      // LINE users: logs are keyed by line_user_id (same as the LINE bot writes),
+      // so web + bot + every device share one dataset. Others: fall back to user_id.
+      const q=supabase.from('work_logs').select('*').order('date',{ascending:false})
+      const{data,error}=await (lineId ? q.eq('line_user_id',lineId) : q.eq('user_id',uid))
+      // Logged-in user with no logs → empty state (NOT the demo SAMPLE).
       if(error||!data?.length){setLogs([]);return}
       setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[]})))
     }
@@ -1911,9 +1915,12 @@ export default function App(){
   // Upload images to Supabase Storage ถ้ายังไม่ได้ upload
   let finalImageUrls = form.imageUrls || []
 
-  const uid=(await supabase.auth.getUser()).data?.user?.id
+  const authUser=(await supabase.auth.getUser()).data?.user
+  const uid=authUser?.id
+  const lineId=authUser?.user_metadata?.line_user_id
   const d = {
     user_id:     uid,
+    line_user_id: lineId || null,
     title:       form.title,
     description: form.description || '',
     ai_summary:  form.aiSummary || '',
@@ -2058,7 +2065,10 @@ export default function App(){
     <AIAssistantPage
       logs={logs}
       onLogCreated={async (data) => {
+        const au=(await supabase.auth.getUser()).data?.user
         const d = {
+          user_id: au?.id,
+          line_user_id: au?.user_metadata?.line_user_id || null,
           title: data.title, description: data.description,
           ai_summary: data.aiSummary || '',
           category: data.category, hours_spent: data.hours,

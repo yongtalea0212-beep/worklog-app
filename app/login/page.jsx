@@ -14,12 +14,18 @@ export default function LoginPage() {
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [inApp, setInApp] = useState(false)
 
   // Redirect if already logged in
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) router.replace('/')
     })
+    // Detect embedded / in-app browsers (LINE, FB, IG) where Google OAuth fails
+    try {
+      const ua = navigator.userAgent || ''
+      if (/\bLine\b|FBAN|FBAV|Instagram|MicroMessenger/i.test(ua)) setInApp(true)
+    } catch {}
   }, [])
 
   async function handleEmail(e) {
@@ -50,6 +56,10 @@ export default function LoginPage() {
   }
 
   async function handleGoogle() {
+    if (inApp) {
+      setError('Google ไม่รองรับการเข้าสู่ระบบในแอป LINE/Facebook — กรุณาเปิดในเบราว์เซอร์ (Safari/Chrome) หรือใช้ LINE/อีเมล')
+      return
+    }
     setLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -243,8 +253,14 @@ export default function LoginPage() {
             <>
               <div className="login-divider">หรือเข้าสู่ระบบด้วย</div>
 
+              {inApp && (
+                <div style={{ background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:10, padding:'9px 12px', fontSize:11.5, color:'#B45309', marginBottom:10, lineHeight:1.5 }}>
+                  💡 คุณกำลังใช้แอปในเบราว์เซอร์ของ LINE/Facebook — Google จะใช้ไม่ได้ แนะนำให้เข้าสู่ระบบด้วย <b>LINE</b> หรือ <b>อีเมล</b>
+                </div>
+              )}
+
               {/* Google */}
-              <button className="oauth-btn" onClick={handleGoogle} disabled={loading}>
+              <button className="oauth-btn" onClick={handleGoogle} disabled={loading} style={inApp?{opacity:0.55}:undefined}>
                 <div className="oauth-icon">
                   <svg width="18" height="18" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>

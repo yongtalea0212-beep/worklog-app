@@ -1846,8 +1846,9 @@ export default function App(){
     const reset = () => {
       clearTimeout(timer)
       timer = setTimeout(async () => {
-        await supabase.auth.signOut()
-        window.location.href = '/login'
+        await supabase.auth.signOut({ scope: 'global' })
+        try { localStorage.clear(); sessionStorage.clear() } catch {}
+        window.location.replace('/login')
       }, 30 * 60 * 1000)
     }
     const evts = ['mousedown','keydown','scroll','touchstart','click']
@@ -1881,6 +1882,28 @@ export default function App(){
   },[])
 
   const showT=msg=>{ setToast(msg); setTimeout(()=>setToast(null),3000) }
+
+  // Unified logout — clears all sessions + storage so re-login works on mobile
+  async function doLogout(){
+    try { await supabase.auth.signOut({ scope: 'global' }) } catch {}
+    try { localStorage.clear(); sessionStorage.clear() } catch {}
+    window.location.replace('/login')
+  }
+
+  // Command palette actions
+  function handleCmdAction(action){
+    setShowCmd(false)
+    switch(action){
+      case 'add':       setEditLog(null); setShowForm(true); setPage('log'); break
+      case 'report':    setShowReport(true); break
+      case 'export':    goPage('export'); break
+      case 'gallery':   goPage('gallery'); break
+      case 'logs':      goPage('logs'); break
+      case 'portfolio': goPage('portfolio'); break
+      case 'reports':   goPage('reports'); break
+      default: break
+    }
+  }
 
   async function handleSave(form) {
   // Upload images to Supabase Storage ถ้ายังไม่ได้ upload
@@ -2070,6 +2093,33 @@ export default function App(){
   )
      case "presentation":
   return <PresentationStudio logs={logs} />
+      case "line-integration":
+  return (
+    <div style={{maxWidth:600}}>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:20,fontWeight:700,color:"var(--text)"}}>LINE Integration</div>
+        <div style={{fontSize:12,color:"var(--text3)"}}>เชื่อมต่อบัญชี LINE และการแจ้งเตือน</div>
+      </div>
+      <div className="card">
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:44,height:44,borderRadius:12,background:"rgba(6,199,85,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>💬</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>
+              {user?.user_metadata?.line_user_id?"เชื่อมต่อแล้ว":"ยังไม่ได้เชื่อมต่อ"}
+            </div>
+            <div style={{fontSize:12,color:"var(--text3)"}}>
+              {user?.user_metadata?.line_display_name||"เข้าสู่ระบบผ่าน LINE เพื่อรับการแจ้งเตือน"}
+            </div>
+          </div>
+          <div style={{fontSize:12,fontWeight:700,color:user?.user_metadata?.line_user_id?"#06B6D4":"#9ca3af"}}>
+            {user?.user_metadata?.line_user_id?"✓":"—"}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+      default:
+  return <DashboardPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onReport={()=>setShowReport(true)}/>
     }
   }
 
@@ -2128,7 +2178,7 @@ export default function App(){
                   {user?.app_metadata?.provider==="google"?"🟢 Google":user?.user_metadata?.line_user_id?"🟢 LINE":"🟢 Active"}
                 </div>
               </div>
-              <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}}
+              <button onClick={doLogout}
                 style={{marginLeft:"auto",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.15)",cursor:"pointer",fontSize:11,color:"#EF4444",padding:"4px 8px",borderRadius:6,fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
                 ออกจากระบบ
               </button>
@@ -2171,7 +2221,7 @@ export default function App(){
         </div>
 
         {/* ── Mobile Bottom Navigation (component) ── */}
-        <MobileNav
+        {isMobile && <MobileNav
           currentPage={page}
           onNavigate={goPage}
           onAction={(action)=>{
@@ -2181,7 +2231,7 @@ export default function App(){
             else if(action==='ai-summary') goPage('ai-assistant')
           }}
           logCount={logs.length}
-        />
+        />}
 
         {/* ── Mobile Bottom Sheet Menu ── */}
         {mobMenu&&(
@@ -2229,7 +2279,7 @@ export default function App(){
                     โปรไฟล์
                   </button>
                 </div>
-                <button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login'}} style={{
+                <button onClick={doLogout} style={{
                   width:'100%',padding:'10px',background:'rgba(239,68,68,0.08)',
                   border:'1px solid rgba(239,68,68,0.15)',borderRadius:10,
                   fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer',

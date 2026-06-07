@@ -213,15 +213,22 @@ const ProfilePage = memo(function ProfilePage({ user, logs, onLogout, onNavigate
   async function handleAvatarUpload() {
     if (!avatarFile || !user?.id) return
     setAvatarUploading(true)
-    const ext = avatarFile.name.split('.').pop()
+    const BUCKET = 'worklog-gallery'
+    const ext = (avatarFile.name.split('.').pop() || 'jpg').toLowerCase()
     const path = `avatars/${user.id}/${Date.now()}.${ext}`
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, avatarFile, { upsert: true })
+    let { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, avatarFile, { upsert: true, cacheControl: '3600' })
+    // If the bucket doesn't exist yet, create it (public) then retry once
+    if (uploadError && /bucket not found/i.test(uploadError.message || '')) {
+      await supabase.storage.createBucket(BUCKET, { public: true }).catch(() => {})
+      const retry = await supabase.storage.from(BUCKET).upload(path, avatarFile, { upsert: true, cacheControl: '3600' })
+      uploadError = retry.error
+    }
     if (uploadError) {
       setAvatarUploading(false)
       showToast('อัปโหลดรูปล้มเหลว: ' + uploadError.message, 'error')
       return
     }
-    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path)
     const publicUrl = urlData?.publicUrl
     const { error: updateError } = await supabase.auth.updateUser({ data: { avatar_url: publicUrl } })
     setAvatarUploading(false)

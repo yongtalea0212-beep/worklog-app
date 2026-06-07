@@ -27,6 +27,18 @@ export default function LiffPage() {
     })()
   }, [])
 
+  // Derive a stable Supabase email+password from the LINE userId.
+  // Same LINE user → same credentials → same Supabase uid on every device.
+  async function lineCredentials(userId) {
+    const enc = new TextEncoder()
+    const buf = await crypto.subtle.digest('SHA-256', enc.encode('stayscape-line-v1:' + userId))
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+    return {
+      email: `line_${userId.toLowerCase()}@line.stayscape.app`,
+      password: `Ln1!${hex.slice(0, 32)}`,
+    }
+  }
+
   async function initLiff() {
     setStatus('loading')
     try {
@@ -55,15 +67,37 @@ export default function LiffPage() {
       localStorage.setItem('line_display_name', p.displayName)
       localStorage.setItem('line_picture_url', p.pictureUrl || '')
 
-      // Create Supabase anonymous session using the SHARED client
-      // (must match storageKey 'stayscape-auth' so the main app sees the session)
+      // Sign into Supabase with a DETERMINISTIC account derived from the LINE userId.
+      // This guarantees the SAME Supabase user (same uid) on every device for the
+      // same LINE account → work logs stay in sync across mobile & desktop.
       try {
         const { supabase: sb } = await import('../lib/supabase')
-        const { data: existing } = await sb.auth.getSession()
-        if (!existing?.session) {
-          const { error: authErr } = await sb.auth.signInAnonymously()
-          if (authErr) throw authErr
+        const { email, password } = await lineCredentials(p.userId)
+
+        // Try to sign in to the existing account first
+        let { data: signInData, error: signInErr } =
+          await sb.auth.signInWithPassword({ email, password })
+
+        // If the account doesn't exist yet, create it then sign in
+        if (signInErr) {
+          const { error: signUpErr } = await sb.auth.signUp({
+            email, password,
+            options: { data: {
+              line_user_id: p.userId,
+              line_display_name: p.displayName,
+              line_picture_url: p.pictureUrl || '',
+              provider: 'line',
+            } }
+          })
+          if (signUpErr && !/already registered/i.test(signUpErr.message)) throw signUpErr
+          const retry = await sb.auth.signInWithPassword({ email, password })
+          if (retry.error) throw retry.error
+          signInData = retry.data
         }
+
+        if (!signInData?.session) throw new Error('ไม่สามารถสร้างเซสชันได้ กรุณาลองใหม่')
+
+        // Keep LINE profile metadata fresh
         await sb.auth.updateUser({
           data: {
             line_user_id: p.userId,
@@ -72,11 +106,8 @@ export default function LiffPage() {
             provider: 'line',
           }
         })
-        // Confirm session is persisted before redirecting
-        const { data: check } = await sb.auth.getSession()
-        if (!check?.session) throw new Error('ไม่สามารถสร้างเซสชันได้ กรุณาลองใหม่')
       } catch (e) {
-        console.error('Supabase anon session error:', e)
+        console.error('Supabase LINE auth error:', e)
         setError(e.message || 'เชื่อมต่อระบบไม่สำเร็จ')
         setStatus('error')
         return

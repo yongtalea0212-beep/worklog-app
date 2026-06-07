@@ -822,6 +822,16 @@ body::before {
 }
 
 /* ════════════════════════════════════════
+   PRINT (Export PDF)
+════════════════════════════════════════ */
+@media print {
+  .no-print, .sidebar, .mob-nav, .mob-hamburger { display: none !important; }
+  body { background: white !important; }
+  .main, .content { margin: 0 !important; padding: 0 !important; }
+  .card { box-shadow: none !important; break-inside: avoid; }
+}
+
+/* ════════════════════════════════════════
    MOBILE BOTTOM SHEET MENU
 ════════════════════════════════════════ */
 .mob-sheet-overlay {
@@ -1738,59 +1748,193 @@ function ComingSoonPage({icon,title,desc,features=[]}){
 // ─────────────────────────────────────────
 // PORTFOLIO
 // ─────────────────────────────────────────
-function PortfolioPage({logs}){
+// Shared read-only portfolio view (used by in-app page AND public /portfolio/[id])
+function PortfolioView({logs, profile, embedded}){
   const stats=getStats(logs)
-  const catData=Object.entries(stats.byCategory).map(([id,count])=>({cat:getCat(id),count}))
+  const catData=Object.entries(stats.byCategory).map(([id,count])=>({cat:getCat(id),count})).sort((a,b)=>b.count-a.count)
+  const maxCat=Math.max(1,...catData.map(c=>c.count))
+  const gallery=[]
+  logs.forEach(l=>(l.imageUrls||[]).forEach(u=>{ if(u) gallery.push({url:u,title:l.title}) }))
+  const featured=logs.filter(l=>(l.imageUrls||[]).length>0).slice(0,6)
+  const name=profile.name||'My Portfolio'
+  const initials=(name||'U').trim()[0]?.toUpperCase()||'U'
+
   return (
-    <div style={{maxWidth:700}}>
-      <div style={{marginBottom:20}}><div style={{fontSize:20,fontWeight:700,color:"var(--text)"}}>Portfolio</div><div style={{fontSize:12,color:"var(--text3)"}}>สรุปผลงานประจำเดือน</div></div>
-      <div style={{background:"linear-gradient(135deg,rgba(108,99,255,0.08),rgba(6,182,212,0.05))",border:"1px solid rgba(255,255,255,0.9)",borderRadius:"var(--r-xl)",padding:32,textAlign:"center",marginBottom:20,backdropFilter:"var(--blur)"}}>
-        <div style={{width:60,height:60,borderRadius:"50%",background:"linear-gradient(135deg,#6C63FF,#A78BFA)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px",boxShadow:"0 4px 20px rgba(108,99,255,0.3)"}}>🎨</div>
-        <div style={{fontSize:22,fontWeight:700,color:"var(--text)",letterSpacing:-.4}}>Work Portfolio</div>
-        <div style={{fontSize:13,color:"var(--text2)",marginTop:4}}>พฤษภาคม 2568 · {stats.total} ผลงาน · {stats.hours} ชั่วโมง</div>
+    <div style={{maxWidth:760,margin:'0 auto'}}>
+      {/* Hero */}
+      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,#6C63FF 0%,#9B8FFF 55%,#06B6D4 130%)',borderRadius:'var(--r-xl)',padding:'34px 28px',marginBottom:18,boxShadow:'0 12px 40px rgba(108,99,255,0.28)'}}>
+        <div style={{position:'absolute',top:-40,right:-30,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,0.12)'}}/>
+        <div style={{position:'absolute',bottom:-50,left:-20,width:140,height:140,borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>
+        <div style={{position:'relative',display:'flex',alignItems:'center',gap:18,flexWrap:'wrap'}}>
+          <div style={{width:84,height:84,borderRadius:'50%',background:'rgba(255,255,255,0.25)',border:'3px solid rgba(255,255,255,0.7)',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0,fontSize:32,fontWeight:800,color:'white'}}>
+            {profile.avatar ? <img src={profile.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/> : initials}
+          </div>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:24,fontWeight:800,color:'white',letterSpacing:-.4}}>{name}</div>
+            {profile.title&&<div style={{fontSize:14,fontWeight:600,color:'rgba(255,255,255,0.92)',marginTop:2}}>{profile.title}</div>}
+            {profile.bio&&<div style={{fontSize:12.5,color:'rgba(255,255,255,0.85)',marginTop:8,lineHeight:1.6,maxWidth:460}}>{profile.bio}</div>}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+              {profile.email&&<a href={`mailto:${profile.email}`} style={{textDecoration:'none',background:'rgba(255,255,255,0.2)',color:'white',fontSize:11.5,fontWeight:600,padding:'5px 12px',borderRadius:20}}>✉️ {profile.email}</a>}
+              {profile.phone&&<span style={{background:'rgba(255,255,255,0.2)',color:'white',fontSize:11.5,fontWeight:600,padding:'5px 12px',borderRadius:20}}>📞 {profile.phone}</span>}
+              {profile.line&&<span style={{background:'rgba(255,255,255,0.2)',color:'white',fontSize:11.5,fontWeight:600,padding:'5px 12px',borderRadius:20}}>💬 {profile.line}</span>}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="g3">
-        {[{icon:"✦",l:"ผลงาน",v:stats.total,c:"#6C63FF"},{icon:"⏱",l:"ชั่วโมง",v:stats.hours,c:"#06B6D4"},{icon:"◈",l:"หมวดหมู่",v:Object.keys(stats.byCategory).length,c:"#10B981"}].map(s=>(
-          <div key={s.l} className="card" style={{textAlign:"center",padding:16}}>
+
+      {/* Stats */}
+      <div className="g3" style={{marginBottom:16}}>
+        {[{icon:'✦',l:'ผลงาน',v:stats.total,c:'#6C63FF'},{icon:'⏱',l:'ชั่วโมง',v:stats.hours,c:'#06B6D4'},{icon:'✓',l:'สำเร็จ',v:`${stats.completionRate}%`,c:'#10B981'}].map(s=>(
+          <div key={s.l} className="card" style={{textAlign:'center',padding:16}}>
             <div style={{fontSize:20,marginBottom:6}}>{s.icon}</div>
-            <div style={{fontSize:24,fontWeight:700,color:s.c}}>{s.v}</div>
-            <div style={{fontSize:11,color:"var(--text3)"}}>{s.l}</div>
+            <div style={{fontSize:24,fontWeight:800,color:s.c}}>{s.v}</div>
+            <div style={{fontSize:11,color:'var(--text3)'}}>{s.l}</div>
           </div>
         ))}
       </div>
+
+      {/* Skills with bars */}
+      {catData.length>0&&(
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-t">ทักษะ &amp; ความเชี่ยวชาญ</div>
+          <div style={{display:'flex',flexDirection:'column',gap:11}}>
+            {catData.map(({cat,count})=>(
+              <div key={cat.id}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{fontSize:14}}>{cat.icon}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,color:'var(--text)'}}>{cat.label}</span>
+                  <span style={{marginLeft:'auto',fontSize:11,fontWeight:700,color:cat.color}}>{count} งาน</span>
+                </div>
+                <div style={{height:8,borderRadius:8,background:'rgba(108,99,255,0.08)',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${Math.round((count/maxCat)*100)}%`,background:`linear-gradient(90deg,${cat.color},${cat.color}aa)`,borderRadius:8}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Featured gallery */}
+      {gallery.length>0&&(
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-t">ผลงานเด่น ({gallery.length})</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
+            {gallery.slice(0,12).map((g,i)=>(
+              <a key={i} href={g.url} target="_blank" rel="noreferrer" style={{display:'block',aspectRatio:'1',borderRadius:12,overflow:'hidden',border:'1px solid rgba(108,99,255,0.12)',background:'rgba(108,99,255,0.04)'}}>
+                <img src={g.url} alt={g.title} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Selected works */}
       <div className="card" style={{marginBottom:16}}>
-        <div className="card-t">ทักษะ</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {catData.map(({cat,count})=>(
-            <div key={cat.id} style={{background:cat.bg,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,border:`1px solid ${cat.color}20`}}>
-              <div style={{width:34,height:34,borderRadius:10,background:`${cat.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{cat.icon}</div>
-              <div><div style={{fontSize:13,fontWeight:600,color:cat.color}}>{cat.label}</div><div style={{fontSize:11,color:"var(--text3)"}}>{count} งาน</div></div>
-              <div style={{marginLeft:"auto",fontSize:18,fontWeight:700,color:cat.color}}>{count}</div>
-            </div>
-          ))}
+        <div className="card-t">ผลงานที่เลือก</div>
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {(featured.length?featured:logs.slice(0,6)).map(log=>{
+            const cat=getCat(log.category)
+            const img=(log.imageUrls||[])[0]
+            return (
+              <div key={log.id} style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px',borderRadius:12,background:'rgba(255,255,255,0.5)',border:'1px solid rgba(108,99,255,0.08)'}}>
+                <div style={{width:52,height:52,borderRadius:10,flexShrink:0,overflow:'hidden',background:cat.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>
+                  {img?<img src={img} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:cat.icon}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontSize:13.5,fontWeight:700,color:'var(--text)'}}>{log.title}</span>
+                    <Badge category={log.category}/>
+                  </div>
+                  {(log.aiSummary||log.description)&&<div style={{fontSize:12,color:'var(--text2)',lineHeight:1.5,marginTop:4}}>{log.aiSummary||log.description}</div>}
+                  <div style={{fontSize:10.5,color:'var(--text3)',marginTop:4}}>{fmtDate(log.date)} · {log.hours} ชม.</div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
-      <div className="card">
-        <div className="card-t">Work Timeline</div>
-        {logs.map((log,i)=>{
-          const cat=getCat(log.category)
-          return (
-            <div key={log.id} style={{display:"flex",gap:0,position:"relative"}}>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:36,flexShrink:0}}>
-                <div style={{width:26,height:26,borderRadius:"50%",background:cat.bg,border:`2px solid ${cat.color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,zIndex:1,marginTop:8}}>{cat.icon}</div>
-                {i<logs.length-1&&<div style={{width:1.5,flex:1,background:"rgba(108,99,255,0.15)",minHeight:18}}/>}
-              </div>
-              <div style={{flex:1,paddingBottom:12,paddingLeft:10}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
-                  <span style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{log.title}</span>
-                  <Badge category={log.category}/>
-                </div>
-                <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDate(log.date)} · {log.hours} ชม.</div>
-              </div>
-            </div>
-          )
-        })}
+
+      {!embedded&&<div style={{textAlign:'center',fontSize:11,color:'var(--text3)',padding:'8px 0 20px'}}>สร้างด้วย ✨ StayScape</div>}
+    </div>
+  )
+}
+
+function PortfolioPage({logs, user}){
+  const meta=user?.user_metadata||{}
+  const lineId=meta.line_user_id
+  const [edit,setEdit]=useState(false)
+  const [copied,setCopied]=useState(false)
+  const [form,setForm]=useState({
+    title: meta.portfolio_title||'',
+    bio:   meta.portfolio_bio||'',
+    email: meta.portfolio_email||user?.email||'',
+    phone: meta.portfolio_phone||'',
+    line:  meta.portfolio_line||meta.line_display_name||'',
+  })
+
+  const profile={
+    name: meta.line_display_name||meta.full_name||user?.email?.split('@')[0]||'My Portfolio',
+    avatar: meta.line_picture_url||'',
+    title: form.title, bio: form.bio, email: form.email, phone: form.phone, line: form.line,
+  }
+
+  async function save(){
+    try{
+      await supabase.auth.updateUser({data:{
+        portfolio_title:form.title, portfolio_bio:form.bio,
+        portfolio_email:form.email, portfolio_phone:form.phone, portfolio_line:form.line,
+      }})
+    }catch{}
+    setEdit(false)
+  }
+
+  function share(){
+    if(!lineId){ alert('ฟีเจอร์แชร์ลิงก์รองรับเฉพาะผู้ใช้ที่ล็อกอินผ่าน LINE'); return }
+    const p=new URLSearchParams({
+      n:profile.name, a:profile.avatar, t:form.title, b:form.bio,
+      e:form.email, ph:form.phone, ln:form.line,
+    })
+    const url=`${window.location.origin}/portfolio/${lineId}?${p.toString()}`
+    navigator.clipboard?.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2200) })
+      .catch(()=>{ window.prompt('คัดลอกลิงก์นี้:', url) })
+  }
+
+  const inp={width:'100%',padding:'9px 12px',background:'rgba(255,255,255,0.7)',border:'1.5px solid rgba(200,210,240,0.6)',borderRadius:10,fontSize:13,color:'var(--text)',fontFamily:'inherit',outline:'none',boxSizing:'border-box',marginBottom:8}
+
+  return (
+    <div>
+      {/* Action bar (hidden on print) */}
+      <div className="no-print" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:'var(--text)'}}>Portfolio</div>
+          <div style={{fontSize:12,color:'var(--text3)'}}>โปรไฟล์ผลงานสำหรับสมัครงาน</div>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button onClick={()=>setEdit(e=>!e)} className="btn btn-ghost btn-sm">{edit?'✕ ปิด':'✏️ แก้ไขโปรไฟล์'}</button>
+          <button onClick={share} className="btn btn-ghost btn-sm">{copied?'✓ คัดลอกแล้ว':'🔗 แชร์ลิงก์'}</button>
+          <button onClick={()=>window.print()} className="btn btn-primary btn-sm">📄 Export PDF</button>
+        </div>
       </div>
+
+      {/* Edit profile form */}
+      {edit&&(
+        <div className="card no-print" style={{marginBottom:16}}>
+          <div className="card-t">แก้ไขข้อมูลโปรไฟล์</div>
+          <label style={{fontSize:11,fontWeight:600,color:'var(--text3)'}}>ตำแหน่ง / อาชีพ</label>
+          <input style={inp} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="เช่น Graphic Designer / Content Creator"/>
+          <label style={{fontSize:11,fontWeight:600,color:'var(--text3)'}}>แนะนำตัว (Bio)</label>
+          <textarea style={{...inp,minHeight:70,resize:'vertical'}} value={form.bio} onChange={e=>setForm(f=>({...f,bio:e.target.value}))} placeholder="อธิบายตัวเองสั้นๆ จุดเด่น ประสบการณ์"/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div><label style={{fontSize:11,fontWeight:600,color:'var(--text3)'}}>อีเมล</label><input style={inp} value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="you@email.com"/></div>
+            <div><label style={{fontSize:11,fontWeight:600,color:'var(--text3)'}}>เบอร์โทร</label><input style={inp} value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="08x-xxx-xxxx"/></div>
+          </div>
+          <label style={{fontSize:11,fontWeight:600,color:'var(--text3)'}}>LINE ID</label>
+          <input style={inp} value={form.line} onChange={e=>setForm(f=>({...f,line:e.target.value}))} placeholder="@yourline"/>
+          <button onClick={save} className="btn btn-primary btn-sm" style={{marginTop:4}}>💾 บันทึก</button>
+        </div>
+      )}
+
+      <PortfolioView logs={logs} profile={profile}/>
     </div>
   )
 }
@@ -2039,7 +2183,7 @@ export default function App(){
       case "logs":        return <LogsPage logs={logs} onEdit={log=>{setEditLog(log);setShowForm(true);setPage("log")}} onDelete={handleDelete} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onStatusChange={handleStatusChange}/>
       case "gallery":
   return <GalleryPageFull logs={logs} />
-      case "portfolio":   return <PortfolioPage logs={logs}/>
+      case "portfolio":   return <PortfolioPage logs={logs} user={user}/>
       case "profile":     return <ProfilePage user={user} logs={logs} onLogout={async()=>{await supabase.auth.signOut({scope:'global'});localStorage.clear();sessionStorage.clear();window.location.replace('/login')}} onNavigate={goPage}/>
       case "projects":    return <ProjectsPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onNavigate={goPage}/>
       case "calendar":

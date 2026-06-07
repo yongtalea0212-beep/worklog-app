@@ -9,6 +9,7 @@ import SmartProductivityPanel from './SmartProductivityPanel'
 import SmartWorklogWorkspace from './SmartWorklogWorkspace'
 import PresentationStudio from './PresentationStudio'
 import MobileNav from './MobileNav'
+import ProfilePage from './ProfilePage'
 import CategoryManager, { useCategories } from './CategoryManager'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
@@ -1830,11 +1831,14 @@ export default function App(){
     })
     // Step 2: listen for changes (logout, token refresh)
     // IMPORTANT: skipInitial=true to avoid overwriting Step 1 result with null
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
-      // Only update on real events, not the initial INITIAL_SESSION
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        setUser(session?.user || null)
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        return
+      }
+      if (session) {
+        setUser(session.user)
       }
     })
     // Auto logout after 30min inactivity
@@ -2000,7 +2004,7 @@ export default function App(){
       case "gallery":
   return <GalleryPageFull logs={logs} />
       case "portfolio":   return <PortfolioPage logs={logs}/>
-      case "profile":     return <ProfilePage user={user} logs={logs} onLogout={async()=>{await supabase.auth.signOut();window.location.href='/login'}} onNavigate={goPage}/>
+      case "profile":     return <ProfilePage user={user} logs={logs} onLogout={async()=>{await supabase.auth.signOut({scope:'global'});localStorage.clear();sessionStorage.clear();window.location.replace('/login')}} onNavigate={goPage}/>
       case "projects":    return <ProjectsPage logs={logs} onAdd={()=>{setEditLog(null);setShowForm(true);setPage("log")}} onNavigate={goPage}/>
       case "calendar":
   return (
@@ -2396,139 +2400,4 @@ function ReportsPage({ logs, onReport, onNavigate }) {
   )
 }
 
-// ─────────────────────────────────────────
-// PROFILE PAGE
-// ─────────────────────────────────────────
-function ProfilePage({ user, logs, onLogout, onNavigate }) {
-  const [showConfirm, setShowConfirm] = React.useState(false)
-
-  const stats = {
-    total: logs.length,
-    hours: logs.reduce((s,l)=>s+(l.hours||0),0),
-    done:  logs.filter(l=>l.status==='done').length,
-    cats:  [...new Set(logs.map(l=>l.category))].length,
-  }
-
-  const displayName = user?.user_metadata?.line_display_name
-    || user?.user_metadata?.full_name
-    || user?.email?.split('@')[0]
-    || 'User'
-
-  const provider = user?.app_metadata?.provider === 'google' ? 'Google'
-    : user?.user_metadata?.line_user_id ? 'LINE'
-    : 'Email'
-
-  const providerIcon = provider === 'Google' ? '🔵' : provider === 'LINE' ? '🟢' : '📧'
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{fontSize:20,fontWeight:700,color:'var(--text)',marginBottom:20}}>โปรไฟล์</div>
-
-      {/* Profile Card */}
-      <div className="card" style={{marginBottom:16,textAlign:'center',padding:'28px 20px'}}>
-        {/* Avatar */}
-        <div style={{
-          width:80,height:80,borderRadius:'50%',
-          background:'linear-gradient(135deg,#6C63FF,#9B8FFF)',
-          overflow:'hidden',margin:'0 auto 14px',
-          border:'3px solid rgba(108,99,255,0.2)',
-          display:'flex',alignItems:'center',justifyContent:'center',
-          fontSize:32,fontWeight:700,color:'white',
-        }}>
-          {user?.user_metadata?.line_picture_url
-            ? <img src={user.user_metadata.line_picture_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>
-            : displayName[0]?.toUpperCase()
-          }
-        </div>
-
-        {/* Name */}
-        <div style={{fontSize:20,fontWeight:700,color:'var(--text)',marginBottom:4}}>{displayName}</div>
-        <div style={{fontSize:13,color:'var(--text3)',marginBottom:8}}>
-          {user?.email || user?.user_metadata?.line_user_id || 'LINE User'}
-        </div>
-        <div style={{
-          display:'inline-flex',alignItems:'center',gap:6,
-          background:'rgba(108,99,255,0.08)',border:'1px solid rgba(108,99,255,0.15)',
-          borderRadius:20,padding:'4px 14px',fontSize:12,color:'#6C63FF',fontWeight:600,
-        }}>
-          {providerIcon} เข้าสู่ระบบด้วย {provider}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="kpi-grid" style={{marginBottom:16}}>
-        {[
-          {label:'งานทั้งหมด',value:stats.total,unit:'งาน',color:'#6C63FF'},
-          {label:'ชั่วโมงรวม',value:stats.hours,unit:'ชม.',color:'#06B6D4'},
-          {label:'งานเสร็จ',value:stats.done,unit:'งาน',color:'#10B981'},
-          {label:'หมวดหมู่',value:stats.cats,unit:'หมวด',color:'#F59E0B'},
-        ].map(k=>(
-          <div key={k.label} className="kpi">
-            <div className="kpi-label">{k.label}</div>
-            <div className="kpi-value" style={{color:k.color}}>
-              {k.value}<span style={{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}}>{k.unit}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Account Info */}
-      <div className="card" style={{marginBottom:16}}>
-        <div className="section-header"><div className="section-title">ข้อมูลบัญชี</div></div>
-        {[
-          {label:'ชื่อผู้ใช้',value:displayName},
-          {label:'อีเมล',value:user?.email||'-'},
-          {label:'วิธีเข้าสู่ระบบ',value:`${providerIcon} ${provider}`},
-          {label:'LINE User ID',value:user?.user_metadata?.line_user_id||'-'},
-        ].map(item=>(
-          <div key={item.label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'0.5px solid rgba(0,0,0,0.05)'}}>
-            <div style={{fontSize:13,color:'var(--text3)'}}>{item.label}</div>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',maxWidth:'60%',textAlign:'right',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Actions */}
-      <div className="card">
-        <div className="section-header"><div className="section-title">การจัดการบัญชี</div></div>
-        <div style={{display:'flex',flexDirection:'column',gap:8,paddingTop:8}}>
-          <button onClick={()=>onNavigate('categories')} style={{
-            display:'flex',alignItems:'center',gap:12,padding:'12px 14px',
-            background:'rgba(108,99,255,0.05)',border:'1px solid rgba(108,99,255,0.12)',
-            borderRadius:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',
-          }}>
-            <span style={{fontSize:20}}>🏷️</span>
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>จัดการหมวดหมู่</div>
-              <div style={{fontSize:11,color:'var(--text3)'}}>เพิ่ม แก้ไข ลบหมวดหมู่</div>
-            </div>
-          </button>
-
-          {/* Logout */}
-          {!showConfirm ? (
-            <button onClick={()=>setShowConfirm(true)} style={{
-              display:'flex',alignItems:'center',gap:12,padding:'12px 14px',
-              background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.15)',
-              borderRadius:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',
-            }}>
-              <span style={{fontSize:20}}>🚪</span>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:'#EF4444'}}>ออกจากระบบ</div>
-                <div style={{fontSize:11,color:'var(--text3)'}}>ออกจากบัญชีนี้</div>
-              </div>
-            </button>
-          ) : (
-            <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:13,fontWeight:600,color:'#1a1a2e',marginBottom:10}}>ยืนยันออกจากระบบ?</div>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>setShowConfirm(false)} style={{flex:1,padding:'9px',border:'1px solid rgba(200,210,240,0.5)',borderRadius:10,background:'rgba(255,255,255,0.6)',fontSize:13,cursor:'pointer',fontFamily:'inherit',color:'var(--text3)'}}>ยกเลิก</button>
-                <button onClick={onLogout} style={{flex:1,padding:'9px',border:'none',borderRadius:10,background:'linear-gradient(135deg,#EF4444,#F87171)',color:'white',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>ออกจากระบบ</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+// ProfilePage is now imported from './ProfilePage'

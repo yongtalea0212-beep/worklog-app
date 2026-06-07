@@ -7,15 +7,38 @@ export default function Page() {
   const [status, setStatus] = useState<'loading' | 'auth' | 'ready'>('loading')
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (session?.user) {
+    let mounted = true
+    // First check current session immediately
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      if (data.session?.user) {
         setStatus('ready')
       } else {
         setStatus('auth')
-        window.location.href = '/login'
+        window.location.replace('/login')
+      }
+    }).catch(() => {
+      if (mounted) {
+        setStatus('auth')
+        window.location.replace('/login')
       }
     })
-    return () => subscription.unsubscribe()
+    // Then listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
+      if (event === 'SIGNED_OUT') {
+        setStatus('auth')
+        window.location.replace('/login')
+        return
+      }
+      if (session?.user) {
+        setStatus('ready')
+      }
+    })
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   if (status === 'loading') return (

@@ -2022,9 +2022,10 @@ if (mtype==='text') {
     if (!buf) return replyLINE(token,[{type:'text',text:'⚠️ ดาวน์โหลดไฟล์ไม่สำเร็จ ลองส่งใหม่อีกครั้งครับ'}])
 
     const { text, pages, ok, err } = await extractPdfText(buf)
-    // Extraction threw → surface the reason so failures are diagnosable.
+    // Extraction threw → reported (reason is logged server-side).
     if (!ok) {
-      return replyLINE(token,[{type:'text',text:'⚠️ อ่านไฟล์ PDF ไม่สำเร็จครับ\n('+err+')\nลองส่งใหม่ หรือพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
+      console.error('[PDF] extract failed:', err)
+      return replyLINE(token,[{type:'text',text:'⚠️ อ่านไฟล์ PDF ไม่สำเร็จครับ\nลองส่งใหม่ หรือพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
     }
     // Parsed OK but little/no text → genuinely a scanned/image PDF.
     if (text.replace(/\s/g,'').length < 40) {
@@ -2032,6 +2033,7 @@ if (mtype==='text') {
     }
 
     const info = await analyzePdf(text, pages)
+    info.pages = pages // carry the real page count to the summary card
     const messages = [msgPdfSummary(fileName, info)]
     if (info.tasks.length) {
       setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })

@@ -611,7 +611,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
     setSaving(true)
     try { localStorage.removeItem('worklog_draft') } catch {}
     await onSave(form)
-    sendLineNotify(form, 'save')
+    // Single notification, only after a successful save. Completed tasks get
+    // the "completed" trigger; everything else is a normal save.
+    sendLineNotify(form, form.status === 'done' ? 'completed' : 'save')
     setSaving(false)
   }
 
@@ -717,8 +719,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
               <StatusSelector
                 value={form.status}
                 onChange={v => {
+                  // Status changes are local until the task is saved — no
+                  // notification here (prevents notification spam while editing).
                   set('status', v)
-                  sendLineNotify({ ...form, status: v }, 'status_change')
                 }}
                 timerRunning={timerRunning}
               />
@@ -745,9 +748,10 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                 <LiveTimer
                   onHoursChange={h => { if (h > 0) set('hours', Math.max(0.5, parseFloat(h.toFixed(1)))) }}
                   onStart={() => {
+                    // Starting the timer is an in-progress edit, not a saved
+                    // action — defer any LINE notification until save.
                     setTimerRunning(true)
                     if (form.status !== 'in_progress') set('status', 'in_progress')
-                    sendLineNotify({ ...form, status: 'in_progress' }, 'timer_start')
                   }}
                   onStop={() => setTimerRunning(false)}
                 />

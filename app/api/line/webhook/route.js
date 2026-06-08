@@ -976,6 +976,151 @@ tasks = งานที่ควรสร้างจากเอกสารน
 }
 
 // ─────────────────────────────────────────
+// AI INBOX — vision understanding of images/screenshots (§10)
+// ─────────────────────────────────────────
+const INBOX_TYPES = {
+  task:            { label:'งาน',          emoji:'✅' },
+  meeting:         { label:'ประชุม',       emoji:'📅' },
+  invoice:         { label:'ใบแจ้งหนี้',    emoji:'🧾' },
+  purchase_order:  { label:'ใบสั่งซื้อ',    emoji:'📦' },
+  contract:        { label:'สัญญา',         emoji:'📜' },
+  report:          { label:'รายงาน',        emoji:'📊' },
+  presentation:    { label:'พรีเซนเทชัน',   emoji:'📑' },
+  marketing:       { label:'งานการตลาด',    emoji:'📢' },
+  customer_request:{ label:'คำขอลูกค้า',    emoji:'🙋' },
+  support_ticket:  { label:'ซัพพอร์ต',      emoji:'🎫' },
+  other:           { label:'อื่นๆ',         emoji:'📌' },
+}
+const PRIORITY = {
+  high:   { label:'ด่วน',  emoji:'🔴', color:BRAND.red },
+  medium: { label:'ปกติ',  emoji:'🟡', color:BRAND.amber },
+  low:    { label:'ไม่เร่ง', emoji:'🟢', color:BRAND.green },
+}
+
+// Claude vision call — classifies/extracts directly from the image (no external OCR).
+async function callAIVision(prompt, base64, mediaType='image/jpeg', { maxTokens=700, timeoutMs=20000 } = {}) {
+  if (!ANTHROPIC_KEY || !base64) return ''
+  const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),timeoutMs)
+  try {
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001', max_tokens:maxTokens,
+        messages:[{ role:'user', content:[
+          { type:'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
+          { type:'text', text:prompt },
+        ]}],
+      }),
+      signal:ctrl.signal,
+    })
+    clearTimeout(t)
+    if (!r.ok){ const e=await r.json().catch(()=>({})); console.error('[VISION]',r.status,e); return '' }
+    return (await r.json()).content?.[0]?.text||''
+  } catch(e){ clearTimeout(t); console.error('[VISION]',e.name==='AbortError'?'TIMEOUT':e); return '' }
+}
+
+async function analyzeImageInbox(base64) {
+  const p = `คุณเป็นระบบรับงานอัจฉริยะ (AI Inbox) วิเคราะห์รูป/สกรีนช็อตนี้ ตอบ JSON เท่านั้น ห้าม markdown
+ประเภท inbox: task|meeting|invoice|purchase_order|contract|report|presentation|marketing|customer_request|support_ticket|other
+หมวดงาน: graphic|video|photo|marketing|ai|branding|pos|other
+ความสำคัญ: high|medium|low
+ตอบ: {"inbox_type":"...","title":"ชื่อสั้นกระชับ","summary":"สิ่งที่อยู่ในรูป 1-2 ประโยค","category":"...","priority":"...","hours":1,"tags":["t1","t2"],"extracted_text":"ข้อความ/ตัวเลข/วันที่สำคัญที่อ่านได้ในรูป ถ้าไม่มีให้เว้นว่าง"}`
+  try {
+    const txt = await callAIVision(p, base64, 'image/jpeg', { maxTokens:700, timeoutMs:18000 })
+    const s = txt.indexOf('{'), e = txt.lastIndexOf('}')
+    if (s===-1||e===-1) throw new Error('no json')
+    const a = JSON.parse(txt.slice(s, e+1))
+    if (!a.title && !a.summary) throw new Error('empty')
+    return {
+      inbox_type: INBOX_TYPES[a.inbox_type] ? a.inbox_type : 'other',
+      title: a.title || '',
+      summary: a.summary || '',
+      category: CAT[a.category] ? a.category : 'photo',
+      priority: PRIORITY[a.priority] ? a.priority : 'medium',
+      hours: Number(a.hours) || 1,
+      tags: Array.isArray(a.tags) ? a.tags.slice(0,5) : [],
+      extracted_text: a.extracted_text || '',
+    }
+  } catch { return null }
+}
+
+// AI Inbox classification card (§10)
+function msgInboxCard(a, imgUrl) {
+  const itype = INBOX_TYPES[a.inbox_type] || INBOX_TYPES.other
+  const cat = CAT[a.category] || CAT.other
+  const pr = PRIORITY[a.priority] || PRIORITY.medium
+  return [{
+    type:'flex', altText:'📥 AI Inbox: '+(a.title||'รับรูปแล้ว'),
+    contents:{
+      type:'bubble', size:'mega',
+      ...(imgUrl ? { hero:{ type:'image', url:imgUrl, size:'full', aspectRatio:'20:13', aspectMode:'cover', action:{ type:'uri', uri:APP_URL } } } : {}),
+      header:{
+        type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:cat.bg,
+        contents:[
+          { type:'box', layout:'horizontal', contents:[
+            { type:'text', text:'📥 AI Inbox', size:'xs', weight:'bold', color:BRAND.purple, flex:1 },
+            { type:'box', layout:'vertical', flex:0, cornerRadius:'20px', paddingAll:'3px', paddingStart:'10px', paddingEnd:'10px', backgroundColor:cat.color+'22',
+              contents:[{ type:'text', text:itype.emoji+' '+itype.label, size:'xxs', color:cat.color, weight:'bold' }] },
+          ]},
+          { type:'text', text:a.title||'งานจากรูป', weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'14px', spacing:'md', backgroundColor:BRAND.cardBg,
+        contents:[
+          ...(a.summary ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px', backgroundColor:BRAND.purpleBg,
+            contents:[
+              { type:'text', text:'✨ AI เข้าใจว่า', size:'xs', weight:'bold', color:BRAND.purple },
+              { type:'text', text:a.summary, size:'sm', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[
+            { type:'box', layout:'vertical', flex:1, cornerRadius:'10px', paddingAll:'10px', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+              contents:[
+                { type:'text', text:'หมวด', size:'xxs', color:BRAND.textMuted, align:'center' },
+                { type:'text', text:cat.emoji+' '+cat.label, size:'xs', weight:'bold', color:cat.color, align:'center', margin:'xs', wrap:true },
+              ]},
+            { type:'box', layout:'vertical', flex:1, cornerRadius:'10px', paddingAll:'10px', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+              contents:[
+                { type:'text', text:'ความสำคัญ', size:'xxs', color:BRAND.textMuted, align:'center' },
+                { type:'text', text:pr.emoji+' '+pr.label, size:'xs', weight:'bold', color:pr.color, align:'center', margin:'xs' },
+              ]},
+            { type:'box', layout:'vertical', flex:1, cornerRadius:'10px', paddingAll:'10px', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+              contents:[
+                { type:'text', text:'เวลา', size:'xxs', color:BRAND.textMuted, align:'center' },
+                { type:'text', text:(a.hours||1)+' ชม.', size:'xs', weight:'bold', color:BRAND.cyan, align:'center', margin:'xs' },
+              ]},
+          ]},
+          ...(a.extracted_text ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'10px', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+            contents:[
+              { type:'text', text:'🔍 ข้อความที่อ่านได้', size:'xxs', color:BRAND.textMuted, weight:'bold' },
+              { type:'text', text:a.extracted_text, size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+        ]
+      },
+      footer:{
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'button', style:'primary', height:'sm', color:BRAND.green,
+            action:{ type:'postback', label:'✅ สร้างงาน', data:'action=inbox_create' } },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[
+            { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+              action:{ type:'postback', label:'✏️ ใส่เอง', data:'action=inbox_describe' } },
+            { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
+              action:{ type:'postback', label:'❌ ข้าม', data:'action=inbox_skip' } },
+          ]},
+        ]
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+    }
+  }]
+}
+
+// ─────────────────────────────────────────
 // FLEX BUILDERS — Command Center
 // ─────────────────────────────────────────
 function btn(label, data, color, style='secondary') {
@@ -1642,6 +1787,35 @@ async function processEvent(event) {
       clearSession(uid)
       return replyLINE(token,[{type:'text',text:'ยกเลิกแล้ว ไม่ได้สร้างงานจากเอกสาร ❌'}])
     }
+
+    // AI Inbox confirmation (§10)
+    if (action === 'inbox_create') {
+      const s = getSession(uid)
+      if (s.state !== 'inbox_confirm' || !s.data.analysis) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ ส่งรูปอีกครั้งครับ'}])
+      const a = s.data.analysis
+      const tags = [...(a.tags || [])]
+      const itype = INBOX_TYPES[a.inbox_type]
+      if (itype && a.inbox_type !== 'other') tags.push(itype.label)
+      if (a.priority === 'high') tags.push('ด่วน')
+      const d = {
+        title: a.title || 'งานจากรูป', desc: a.extracted_text || '', summary: a.summary || '',
+        category: a.category || 'photo', hours: a.hours || 1,
+        tags, images: [s.data.imgUrl].filter(Boolean), status: 'draft', source: 'line-inbox',
+      }
+      const saved = await saveWorklog(uid, d)
+      clearSession(uid)
+      return replyLINE(token, msgCompactCreated(d, saved))
+    }
+    if (action === 'inbox_describe') {
+      const s = getSession(uid)
+      const imgUrl = s.data?.imgUrl || null
+      setSession(uid, 'awaiting_desc', { imgUrl })
+      return replyLINE(token,[{type:'text',text:'✏️ พิมพ์รายละเอียดงานในรูปนี้ได้เลยครับ'}])
+    }
+    if (action === 'inbox_skip') {
+      clearSession(uid)
+      return replyLINE(token,[{type:'text',text:'ข้ามแล้ว — รูปถูกเก็บไว้ในคลังภาพแล้ว ✅'}])
+    }
     return
   }
 
@@ -1708,15 +1882,24 @@ if (mtype==='text') {
       clearSession(uid)
       return replyLINE(token,[{type:'text',text:'⚠️ อัปโหลดรูปไม่สำเร็จ'}])
     }
-    // New image → ask for description
+    // New image → AI Inbox: understand it with Claude vision (§10)
     const buf=await getContent(event.message.id)
     const imgUrl=buf?await uploadImg(buf,event.message.id):null
+    // Vision has request-size limits; very large images fall back to manual entry.
+    const analysis = (buf && buf.length <= 4_500_000)
+      ? await analyzeImageInbox(buf.toString('base64'))
+      : null
+    if (analysis) {
+      setSession(uid,'inbox_confirm',{ analysis, imgUrl })
+      return replyLINE(token, msgInboxCard(analysis, imgUrl))
+    }
+    // Fallback: vision unavailable/too large → ask for a description.
     setSession(uid,'awaiting_desc',{imgUrl})
     return replyLINE(token, msgImageReceived(imgUrl||'https://via.placeholder.com/800x400/6C63FF/FFFFFF?text=WorkLog+AI'))
   }
 
   if (mtype==='video') return replyLINE(token,[{type:'text',text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก'}])
-  if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับเสียงแล้ว!\nพิมพ์บอกว่าทำงานอะไร 📝'}])
+  if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับข้อความเสียงแล้ว ✅\nตอนนี้ยังไม่รองรับการถอดเสียงอัตโนมัติ — พิมพ์อธิบายงานเพื่อบันทึกได้เลยครับ'}])
   if (mtype==='file') {
     const fileName = event.message.fileName || 'ไฟล์'
     // Only PDFs get the intelligence pipeline; other files are acknowledged.

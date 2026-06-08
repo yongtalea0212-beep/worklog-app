@@ -945,12 +945,13 @@ async function extractPdfText(buf) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
     // pdf.worker.mjs is force-included next to pdf.mjs (see next.config
     // outputFileTracingIncludes) so pdfjs's default sibling resolution works.
-    const doc = await pdfjs.getDocument({
+    const task = pdfjs.getDocument({
       data: new Uint8Array(buf),
       isEvalSupported: false,
       useWorkerFetch: false,
       useSystemFonts: false,
-    }).promise
+    })
+    const doc = await task.promise
     const pages = doc.numPages
     let out = ''
     for (let i = 1; i <= Math.min(pages, 30); i++) {
@@ -958,7 +959,8 @@ async function extractPdfText(buf) {
       const tc = await page.getTextContent()
       out += tc.items.map(it => ('str' in it ? it.str : '')).join(' ') + '\n'
     }
-    await doc.destroy().catch(()=>{})
+    // Best-effort cleanup — must never fail the extraction we just completed.
+    try { await task.destroy() } catch {}
     return { text: out.trim(), pages, ok: true, err: '' }
   } catch (e) {
     const msg = (e && (e.message || String(e))) || 'unknown'

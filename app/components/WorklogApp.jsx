@@ -2084,18 +2084,20 @@ export default function App(){
     priority:    form.priority ?? 'medium',
   }
 
-  if (editLog) {
-    await supabase.from('work_logs').update(d).eq('id', editLog.id)
+  // Only treat as an edit when there's a real existing id. The Calendar's
+  // "add" paths set editLog to a no-id object, which must still INSERT.
+  if (editLog && editLog.id) {
+    const { error } = await supabase.from('work_logs').update(d).eq('id', editLog.id)
+    if (error) { console.error('[SAVE]', error); showT('⚠️ บันทึกไม่สำเร็จ: ' + error.message); throw error }
     setLogs(ls => ls.map(l => l.id === editLog.id
       ? { ...l, ...form, imageUrls: finalImageUrls }
       : l
     ))
     showT('✓ แก้ไขงานแล้ว')
   } else {
-    const { data } = await supabase.from('work_logs').insert(d).select()
-    if (data?.[0]) {
-      setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls }, ...ls])
-    }
+    const { data, error } = await supabase.from('work_logs').insert(d).select()
+    if (error || !data?.[0]) { console.error('[SAVE]', error); showT('⚠️ บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : '')); throw (error || new Error('insert failed')) }
+    setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls }, ...ls])
     showT('✓ บันทึกงานแล้ว')
   }
   setShowForm(false); setEditLog(null); setPage('logs')

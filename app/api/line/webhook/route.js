@@ -942,6 +942,8 @@ async function extractPdfText(buf) {
     // pdfjs-dist legacy build runs in Node with no worker and no DOM globals —
     // the serverless-safe way to read a PDF's text layer.
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    // pdf.worker.mjs is force-included next to pdf.mjs (see next.config
+    // outputFileTracingIncludes) so pdfjs's default sibling resolution works.
     const doc = await pdfjs.getDocument({
       data: new Uint8Array(buf),
       isEvalSupported: false,

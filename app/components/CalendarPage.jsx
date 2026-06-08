@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
-import interactionPlugin from '@fullcalendar/interaction'
+import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 
 // ─────────────────────────────────────────
 // CONSTANTS
@@ -108,7 +108,7 @@ const CAL_CSS = `
 // ─────────────────────────────────────────
 // EVENT DETAIL MODAL (click event)
 // ─────────────────────────────────────────
-function EventDetailModal({ event, onClose, onEdit, onDelete }) {
+function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
   const [imgIndex, setImgIndex] = useState(0)
   const [imgLoaded, setImgLoaded] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
@@ -142,12 +142,16 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
   const statusLabel = status === 'done' ? '✅ เสร็จแล้ว' : status === 'in_progress' ? '🔄 กำลังทำ' : '📝 ร่าง'
   const hasImages = imageUrls.length > 0
 
+  const isScheduled = !!props.startAt
+
   function handleEdit() {
     onEdit({
       id, title, description, aiSummary, category,
       hours: Number(hours) || 0, status, tags,
       date: date ? date.split('T')[0] : new Date().toISOString().split('T')[0],
       imageUrls, imageCount: imageUrls.length,
+      startAt: props.startAt || null, endAt: props.endAt || null,
+      dueDate: props.dueDate || null, priority: props.priority || 'medium',
     })
     onClose()
   }
@@ -315,6 +319,9 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
           {/* Actions */}
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end', paddingTop:14, borderTop:'1px solid rgba(0,0,0,0.06)' }}>
             <button onClick={() => { onDelete(id); onClose() }} style={{ padding:'9px 18px', background:'rgba(239,68,68,0.07)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:11, fontSize:13, color:'#EF4444', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>ลบ</button>
+            {isScheduled && onUnschedule && (
+              <button onClick={() => onUnschedule(id)} style={{ padding:'9px 18px', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:11, fontSize:13, color:'#F59E0B', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>↩ ยกเลิกเวลา</button>
+            )}
             {hasImages && (
               <button onClick={() => setFullscreen(true)} style={{ padding:'9px 18px', background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.2)', borderRadius:11, fontSize:13, color:'#6C63FF', cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}>🖼 ดูรูปเต็ม</button>
             )}
@@ -397,31 +404,95 @@ function QuickAddModal({ date, onClose, onAdd }) {
 }
 
 // ─────────────────────────────────────────
-// STATS ROW
+// STATS ROW — workload / planning KPIs (§17)
 // ─────────────────────────────────────────
+const round1 = v => Math.round(v * 10) / 10
+const hrsOf = l => Number(l.hours || l.hours_spent || 0)
+
 function CalendarStats({ logs }) {
-  const total = logs.length
-  const hours = Math.round(logs.reduce((s,l) => s+(l.hours||0), 0) * 10) / 10
-  const days = new Set(logs.map(l => l.date)).size
-  const topEntry = Object.entries(logs.reduce((acc,l) => { acc[l.category]=(acc[l.category]||0)+1; return acc }, {})).sort((a,b)=>b[1]-a[1])[0]
-  const topCat = topEntry ? getCat(topEntry[0]) : null
+  const today = new Date().toISOString().split('T')[0]
+  const scheduled = logs.filter(l => l.startAt)
+  const done      = logs.filter(l => l.status === 'done')
+  const unsched   = logs.filter(l => !l.startAt && l.status !== 'done')
+  const plannedH  = round1(scheduled.reduce((s,l) => s + hrsOf(l), 0))
+  const loggedH   = round1(done.reduce((s,l) => s + hrsOf(l), 0))
+  const todayH    = round1(scheduled.filter(l => String(l.startAt).split('T')[0] === today).reduce((s,l)=>s+hrsOf(l),0))
+
+  const health = todayH <= 6
+    ? { label:'🟢 พอดี',     color:'#10B981' }
+    : todayH <= 9
+    ? { label:'🟠 แน่น',     color:'#F59E0B' }
+    : { label:'🔴 หนักเกิน', color:'#EF4444' }
+
+  const cards = [
+    { icon:'🗓', label:'จัดเวลาแล้ว',  value:scheduled.length, unit:'งาน', color:'#6C63FF' },
+    { icon:'✅', label:'เสร็จแล้ว',     value:done.length,      unit:'งาน', color:'#10B981' },
+    { icon:'📥', label:'ยังไม่จัดเวลา', value:unsched.length,   unit:'งาน', color:'#F59E0B' },
+    { icon:'📐', label:'ชม.ที่วางแผน',  value:plannedH,         unit:'ชม.', color:'#06B6D4' },
+    { icon:'⏱', label:'ชม.ที่ทำจริง',  value:loggedH,          unit:'ชม.', color:'#8B5CF6' },
+    { icon:'⚖️', label:`โหลดวันนี้ (${todayH}ชม.)`, value:health.label, unit:'', color:health.color },
+  ]
 
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:18 }}>
-      {[
-        { icon:'✦', label:'งานทั้งหมด',  value:total,              unit:'งาน',  color:'#6C63FF' },
-        { icon:'⏱', label:'ชั่วโมงรวม',  value:hours,              unit:'ชม.',  color:'#06B6D4' },
-        { icon:'📅', label:'วันที่ทำงาน', value:days,               unit:'วัน',  color:'#10B981' },
-        { icon:'🏆', label:'หมวดเด่น',    value:topCat?.label||'—', unit:'',     color:topCat?.color||'#9ca3af' },
-      ].map((s,i) => (
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:12, marginBottom:18 }}>
+      {cards.map((s,i) => (
         <div key={i} style={{ background:'rgba(255,255,255,0.68)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:16, padding:'14px 16px', boxShadow:'0 2px 12px rgba(100,110,200,0.08)' }}>
           <div style={{ fontSize:12, color:'#9ca3af', marginBottom:6, fontWeight:500 }}>{s.icon} {s.label}</div>
-          <div style={{ fontSize:22, fontWeight:700, color:s.color, lineHeight:1 }}>
+          <div style={{ fontSize:20, fontWeight:700, color:s.color, lineHeight:1.1 }}>
             {s.value}
             {s.unit && <span style={{ fontSize:13, fontWeight:400, color:'#9ca3af', marginLeft:3 }}>{s.unit}</span>}
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────
+// UNSCHEDULED TASKS PANEL (§1) — drag onto the timeline
+// ─────────────────────────────────────────
+function UnscheduledPanel({ tasks, panelRef }) {
+  return (
+    <div style={{ width:240, flexShrink:0 }}>
+      <div style={{ position:'sticky', top:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10 }}>
+          <span style={{ fontSize:13, fontWeight:700, color:'#1a1a2e' }}>📥 งานที่ยังไม่จัดเวลา</span>
+          <span style={{ fontSize:11, fontWeight:700, color:'#6C63FF', background:'rgba(108,99,255,0.1)', borderRadius:20, padding:'1px 8px' }}>{tasks.length}</span>
+        </div>
+        <div ref={panelRef} style={{ display:'flex', flexDirection:'column', gap:7, maxHeight:560, overflowY:'auto', paddingRight:4 }}>
+          {tasks.length === 0 && (
+            <div style={{ fontSize:12, color:'#9ca3af', textAlign:'center', padding:'24px 8px', border:'1px dashed rgba(200,210,240,0.7)', borderRadius:12 }}>
+              ทุกงานถูกจัดเวลาแล้ว 🎉
+            </div>
+          )}
+          {tasks.map(t => {
+            const cat = getCat(t.category || 'other')
+            return (
+              <div
+                key={t.id}
+                className="unsched-item"
+                data-id={t.id}
+                data-title={safe(t.title, 'งาน')}
+                data-color={cat.color}
+                data-hours={hrsOf(t) || 1}
+                title="ลากไปวางบนตารางเวลาเพื่อจัดเวลา"
+                style={{
+                  cursor:'grab', background:'rgba(255,255,255,0.9)', borderLeft:`3px solid ${cat.color}`,
+                  border:'1px solid rgba(200,210,240,0.55)', borderLeftWidth:3, borderRadius:10,
+                  padding:'8px 10px', boxShadow:'0 1px 4px rgba(100,110,200,0.06)',
+                }}
+              >
+                <div style={{ fontSize:12.5, fontWeight:600, color:'#1a1a2e', lineHeight:1.3, marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{safe(t.title,'งาน')}</div>
+                <div style={{ fontSize:10.5, color:'#9ca3af', display:'flex', gap:6 }}>
+                  <span>{cat.icon} {cat.label}</span>
+                  <span>· {hrsOf(t) || 1} ชม.</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ fontSize:11, color:'#9ca3af', marginTop:10, lineHeight:1.5 }}>💡 ลากการ์ดไปวางบนตารางเวลาเพื่อจัดเวลา</div>
+      </div>
     </div>
   )
 }
@@ -447,20 +518,30 @@ function CategoryLegend({ logs }) {
 // ─────────────────────────────────────────
 // MAIN CALENDAR PAGE
 // ─────────────────────────────────────────
-export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog }) {
+export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, onReschedule }) {
   const [detailEvent, setDetailEvent] = useState(null)
   const [quickAddDate, setQuickAddDate] = useState(null)
-  const [view, setView] = useState('dayGridMonth')
+  const [view, setView] = useState('timeGridWeek')
   const calendarRef = useRef()
+  const panelRef = useRef()
 
-  // Convert logs → FullCalendar events
-  // Always include ALL fields in extendedProps so modal never gets undefined
+  const reschedule = onReschedule || (() => {})
+  const showPanel = view !== 'dayGridMonth'
+
+  // Tasks with no scheduled time → the Unscheduled panel (skip completed ones)
+  const unscheduledTasks = (logs || []).filter(l => !l.startAt && l.status !== 'done')
+
+  // Convert logs → FullCalendar events.
+  // Scheduled (start_at) → real timed block; the rest → all-day (month only).
   const events = (logs || []).map(log => {
     const cat = getCat(log.category || 'other')
+    const scheduled = !!log.startAt
     return {
       id: String(log.id),
       title: safe(log.title, 'ไม่มีชื่อ'),
-      date: log.date,
+      ...(scheduled
+        ? { start: log.startAt, end: log.endAt || undefined, allDay: false }
+        : { start: log.date, allDay: true }),
       backgroundColor: cat.color,
       borderColor: 'transparent',
       textColor: '#ffffff',
@@ -475,33 +556,65 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog })
         aiSummary:   safe(log.aiSummary || log.ai_summary, ''),
         imageUrls:   Array.isArray(log.imageUrls) ? log.imageUrls : (Array.isArray(log.image_urls) ? log.image_urls : []),
         date:        safe(log.date, ''),
+        startAt:     log.startAt || null,
+        endAt:       log.endAt || null,
+        dueDate:     log.dueDate || null,
+        priority:    log.priority || 'medium',
       },
     }
   })
 
-  function handleEventClick(info) {
-    // Build a clean event object from FullCalendar event
-    const e = info.event
-    setDetailEvent({
-      title:       safe(e.title, 'ไม่มีชื่อ'),
-      startStr:    e.startStr,
-      extendedProps: e.extendedProps || {},
+  // Make the Unscheduled panel cards draggable onto the timeline.
+  useEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    const d = new Draggable(el, {
+      itemSelector: '.unsched-item',
+      eventData: itemEl => ({
+        title: itemEl.dataset.title,
+        duration: { hours: parseFloat(itemEl.dataset.hours) || 1 },
+        backgroundColor: itemEl.dataset.color,
+        borderColor: 'transparent',
+        textColor: '#ffffff',
+        extendedProps: { logId: itemEl.dataset.id },
+      }),
     })
+    return () => d.destroy()
+  }, [view, unscheduledTasks.length])
+
+  function handleEventClick(info) {
+    const e = info.event
+    setDetailEvent({ title: safe(e.title, 'ไม่มีชื่อ'), startStr: e.startStr, extendedProps: e.extendedProps || {} })
   }
 
-  function handleDateClick(info) {
-    setQuickAddDate(info.dateStr)
-  }
+  function handleDateClick(info) { setQuickAddDate(info.dateStr) }
 
   function handleQuickAdd(data) {
-    // Ensure title is always a string
-    const safeData = { ...data, title: safe(data.title, ''), imageUrls: data.imageUrls || [] }
-    onAddLog(safeData)
+    onAddLog({ ...data, title: safe(data.title, ''), imageUrls: data.imageUrls || [] })
+  }
+
+  // Drag/resize an existing block → save new time in place.
+  function handleEventDrop(info) {
+    const e = info.event
+    if (e.allDay) reschedule(e.extendedProps.id, { date: e.startStr })           // moved between days (month)
+    else reschedule(e.extendedProps.id, { startAt: e.start?.toISOString() || null, endAt: e.end?.toISOString() || null })
+  }
+  function handleEventResize(info) {
+    const e = info.event
+    reschedule(e.extendedProps.id, { startAt: e.start?.toISOString() || null, endAt: e.end?.toISOString() || null })
+  }
+  // Dropped a card from the Unscheduled panel onto the grid.
+  function handleEventReceive(info) {
+    const e = info.event
+    const logId = e.extendedProps.logId
+    const start = e.start
+    const end = e.end || new Date(start.getTime() + 60 * 60 * 1000)
+    reschedule(logId, { startAt: start.toISOString(), endAt: end.toISOString() })
+    info.event.remove() // state will re-render it as a real scheduled event
   }
 
   function handleEdit(editData) {
-    // Ensure no undefined fields before passing to workspace
-    const safeEdit = {
+    onEditLog({
       id:          editData.id,
       title:       safe(editData.title, ''),
       description: safe(editData.description, ''),
@@ -513,8 +626,12 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog })
       date:        safe(editData.date, new Date().toISOString().split('T')[0]),
       imageUrls:   Array.isArray(editData.imageUrls) ? editData.imageUrls : [],
       imageCount:  (editData.imageUrls || []).length,
-    }
-    onEditLog(safeEdit)
+      // Preserve scheduling so editing via the form doesn't unschedule the task.
+      startAt:     editData.startAt || null,
+      endAt:       editData.endAt || null,
+      dueDate:     editData.dueDate || null,
+      priority:    editData.priority || 'medium',
+    })
   }
 
   return (
@@ -525,7 +642,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog })
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:22, flexWrap:'wrap', gap:12 }}>
         <div>
           <div style={{ fontSize:22, fontWeight:700, color:'#1a1a2e' }}>Calendar</div>
-          <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>ดูงานแบบ calendar view · กดวันเพื่อเพิ่มงาน</div>
+          <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>วางแผนงานแบบ time-blocking · ลากงานมาวางบนตารางเวลา</div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
           {[
@@ -551,31 +668,50 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog })
       {/* Legend */}
       <CategoryLegend logs={logs || []} />
 
-      {/* Calendar */}
-      <div style={{ background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding:22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
-        <FullCalendar
-          ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
-          locale="th"
-          headerToolbar={{ left:'prev,next today', center:'title', right:'' }}
-          events={events}
-          eventClick={handleEventClick}
-          dateClick={handleDateClick}
-          dayMaxEvents={3}
-          height="auto"
-          aspectRatio={1.8}
-          firstDay={1}
-          buttonText={{ today:'วันนี้', month:'เดือน', week:'สัปดาห์', day:'วัน' }}
-          moreLinkContent={args => '+'+args.num+' งาน'}
-        />
+      {/* Unscheduled panel (week/day) + Calendar */}
+      <div style={{ display:'flex', gap:16, alignItems:'flex-start' }}>
+        {showPanel && <UnscheduledPanel tasks={unscheduledTasks} panelRef={panelRef} />}
+        <div style={{ flex:1, minWidth:0, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding:22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
+          <FullCalendar
+            ref={calendarRef}
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView="timeGridWeek"
+            locale="th"
+            headerToolbar={{ left:'prev,next today', center:'title', right:'' }}
+            events={events}
+            eventClick={handleEventClick}
+            dateClick={handleDateClick}
+            editable={true}
+            eventResizableFromStart={true}
+            droppable={true}
+            eventDrop={handleEventDrop}
+            eventResize={handleEventResize}
+            eventReceive={handleEventReceive}
+            allDaySlot={false}
+            slotMinTime="06:00:00"
+            slotMaxTime="23:00:00"
+            slotDuration="00:30:00"
+            snapDuration="00:15:00"
+            nowIndicator={true}
+            scrollTime="08:00:00"
+            expandRows={true}
+            dayMaxEvents={3}
+            height="auto"
+            aspectRatio={1.5}
+            firstDay={1}
+            buttonText={{ today:'วันนี้', month:'เดือน', week:'สัปดาห์', day:'วัน' }}
+            moreLinkContent={args => '+'+args.num+' งาน'}
+          />
+        </div>
       </div>
 
       {/* Hint */}
-      <div style={{ marginTop:12, fontSize:12, color:'#9ca3af', textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:12 }}>
-        <span>💡 กดที่วันเพื่อเพิ่มงานด่วน</span>
+      <div style={{ marginTop:12, fontSize:12, color:'#9ca3af', textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:12, flexWrap:'wrap' }}>
+        <span>🖱 ลากงานมาวางบนตารางเพื่อจัดเวลา</span>
         <span>·</span>
-        <span>กดที่งานเพื่อดูรายละเอียดและแก้ไข</span>
+        <span>ลาก/ปรับขอบเพื่อเปลี่ยนเวลา (บันทึกอัตโนมัติ)</span>
+        <span>·</span>
+        <span>กดที่งานเพื่อดูรายละเอียด</span>
       </div>
 
       {/* Modals */}
@@ -585,6 +721,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog })
           onClose={() => setDetailEvent(null)}
           onEdit={handleEdit}
           onDelete={id => { onDeleteLog(id); setDetailEvent(null) }}
+          onUnschedule={id => { reschedule(id, { startAt:null, endAt:null }); setDetailEvent(null) }}
         />
       )}
 

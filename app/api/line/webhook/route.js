@@ -1,7 +1,7 @@
 // app/api/line/webhook/route.js — WorkLog AI LINE Bot v3
 // Premium Flex Cards + Quick Reply + Postback Actions
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 
@@ -874,7 +874,7 @@ async function understand(text) {
 - today (งานวันนี้), done_today (งานเสร็จวันนี้), week (งานสัปดาห์นี้), month (งานเดือนนี้), recent (งานล่าสุด)
 - pending (งานค้าง/ยังไม่เสร็จ), projects (โปรเจกต์ทั้งหมด), project_tasks (งานของโปรเจกต์ใดโปรเจกต์หนึ่ง)
 - hours (เวลาทำงานเดือนนี้), productivity (สรุปประสิทธิภาพ), dashboard (แดชบอร์ด)
-- report (สร้าง/ส่งรายงานเดือนนี้), help (ขอความช่วยเหลือ)
+- report (ดูสรุปรายงานเดือนนี้), send_pdf (สร้าง/ส่งไฟล์ PDF รายงาน), send_ppt (สร้าง/ส่งไฟล์ PowerPoint/สไลด์), help (ขอความช่วยเหลือ)
 - create_task (ผู้ใช้กำลังอธิบายงานที่ทำเพื่อบันทึก)
 - unknown (ไม่เข้าพวก)
 ตอบรูปแบบ: {"intent":"...","project":"<ชื่อโปรเจกต์หรือ tag ถ้า intent=project_tasks ไม่งั้น null>","task":{"title":"ชื่อกระชับ","summary":"สรุปมืออาชีพ 1-2 ประโยค","category":"...","hours":1,"tags":["t1"]}}
@@ -896,6 +896,8 @@ function fallbackIntent(text) {
   const t = (text||'').toLowerCase()
   const has = (...ks) => ks.some(k => t.includes(k))
   if (has('แดชบอร์ด','dashboard')) return { intent:'dashboard', project:null, task:null }
+  if (has('ส่ง ppt','ส่งppt','ppt','powerpoint','พาวเวอร์','สไลด์','พรีเซน')) return { intent:'send_ppt', project:null, task:null }
+  if (has('ส่ง pdf','ส่งpdf','pdf')) return { intent:'send_pdf', project:null, task:null }
   if (has('ค้าง','ยังไม่เสร็จ','overdue')) return { intent:'pending', project:null, task:null }
   if (has('เสร็จ') && has('วันนี้')) return { intent:'done_today', project:null, task:null }
   if (has('วันนี้','today')) return { intent:'today', project:null, task:null }
@@ -972,6 +974,83 @@ tasks = งานที่ควรสร้างจากเอกสารน
     }
   } catch {
     return { summary: '', topics: [], action_items: [], deadlines: [], responsible: [], tasks: [] }
+  }
+}
+
+// ─────────────────────────────────────────
+// REPORT GENERATION + LINE FILE DELIVERY (§11–14)
+// ─────────────────────────────────────────
+async function uploadReport(buf, uid, ext, contentType) {
+  const safeUid = String(uid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'user'
+  const fname = new Date().toISOString().slice(0, 7) // YYYY-MM
+  const p = `reports/${safeUid}_${fname}_${Date.now()}.${ext}`
+  try {
+    const { error } = await supabase.storage.from('worklog-gallery')
+      .upload(p, buf, { contentType, cacheControl: '3600', upsert: false })
+    if (error) { console.error('[REPORT-UP]', error.message); return null }
+    return supabase.storage.from('worklog-gallery').getPublicUrl(p).data.publicUrl
+  } catch (e) { console.error('[REPORT-UP]', e); return null }
+}
+
+// "File ready" delivery card — LINE can't push raw files, so we deliver a
+// download/open link to the stored report (§14).
+function msgFileReady(kind, url, meta) {
+  const isPpt = kind === 'ppt'
+  const label = isPpt ? 'PowerPoint (.pptx)' : 'PDF'
+  const emoji = isPpt ? '📑' : '📄'
+  return [{
+    type:'flex', altText:emoji+' รายงาน'+label+'พร้อมแล้ว',
+    contents:{
+      type:'bubble', size:'mega',
+      header:{
+        type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
+        contents:[
+          { type:'text', text:emoji+' รายงานพร้อมแล้ว', weight:'bold', size:'md', color:BRAND.purple },
+          { type:'text', text:label+' · '+(meta?.periodLabel||''), size:'xs', color:BRAND.textMuted, margin:'xs' },
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'text', text:meta?.title||'รายงานสรุปผลงานประจำเดือน', size:'sm', weight:'bold', color:BRAND.text, wrap:true },
+          { type:'text', text:'แตะปุ่มด้านล่างเพื่อเปิด/ดาวน์โหลด/แชร์ไฟล์', size:'xs', color:BRAND.textMuted, wrap:true, margin:'sm' },
+        ]
+      },
+      footer:{
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'button', style:'primary', height:'sm', color:BRAND.purple,
+            action:{ type:'uri', label:'📥 เปิด / ดาวน์โหลด', uri:url } },
+          { type:'button', style:'secondary', height:'sm', color:'#E8E0FF',
+            action:{ type:'uri', label:'↗ แชร์ไฟล์', uri:'https://line.me/R/msg/text/?'+encodeURIComponent((meta?.title||'รายงาน')+' '+url) } },
+        ]
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+    }
+  }]
+}
+
+// Generate the report off the reply path (via after()) and push it when ready.
+async function generateAndPushReport(uid, kind, lang = 'th') {
+  try {
+    const logs = await getMonthLogsFull(uid)
+    if (!logs.length) return pushLINE(uid, [{ type:'text', text:'เดือนนี้ยังไม่มีงานสำหรับสร้างรายงานครับ 📭' }])
+    const now = new Date()
+    const { buildReportModel, renderReportPDF, renderReportPPTX } = await import('@/app/components/presentation/serverReport')
+    const model = buildReportModel(logs, now.getFullYear(), now.getMonth() + 1, lang)
+    let buf, ext, ctype
+    if (kind === 'ppt') {
+      buf = await renderReportPPTX(model); ext = 'pptx'
+      ctype = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    } else {
+      buf = await renderReportPDF(model); ext = 'pdf'; ctype = 'application/pdf'
+    }
+    const url = await uploadReport(buf, uid, ext, ctype)
+    if (!url) return pushLINE(uid, [{ type:'text', text:'⚠️ อัปโหลดไฟล์รายงานไม่สำเร็จ ลองใหม่อีกครั้งครับ' }])
+    return pushLINE(uid, msgFileReady(kind, url, model.meta))
+  } catch (e) {
+    console.error('[GEN-REPORT]', e?.message || e)
+    return pushLINE(uid, [{ type:'text', text:'⚠️ เกิดข้อผิดพลาดระหว่างสร้างไฟล์รายงานครับ' }])
   }
 }
 
@@ -1517,11 +1596,25 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
               { type:'text', text:'⏱ '+s.hours+' ชั่วโมง · 📁 '+s.projects+' โปรเจกต์', size:'sm', color:BRAND.text },
               { type:'text', text:'สร้างรายงานฉบับเต็ม (PDF/PPT) ได้ในแอป', size:'xs', color:BRAND.textMuted, wrap:true, margin:'sm' },
             ]},
-          footer:{ type:'box', layout:'vertical', paddingAll:'12px', backgroundColor:BRAND.cardBg,
-            contents:[{ type:'button', style:'primary', height:'sm', color:BRAND.purple, action:{ type:'uri', label:'🌐 สร้างรายงานในแอป', uri:APP_URL } }] },
+          footer:{ type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+            contents:[
+              { type:'box', layout:'horizontal', spacing:'sm', contents:[
+                btn('📄 ส่ง PDF', { postback:'action=cmd&cmd=send_pdf' }, BRAND.purple, 'primary'),
+                btn('📑 ส่ง PPT', { postback:'action=cmd&cmd=send_ppt' }, '#E8E0FF'),
+              ]},
+              { type:'button', style:'secondary', height:'sm', color:'#E8E0FF', action:{ type:'uri', label:'🌐 สร้างในแอป', uri:APP_URL } },
+            ] },
           styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
         }
       }])
+    }
+    case 'send_pdf':
+    case 'send_ppt': {
+      const kind = intent === 'send_ppt' ? 'ppt' : 'pdf'
+      // Heavy work runs after the webhook responds; result is pushed when ready.
+      after(() => generateAndPushReport(uid, kind, 'th'))
+      const label = kind === 'ppt' ? 'PowerPoint' : 'PDF'
+      return replyLINE(token, [{ type:'text', text:'⏳ กำลังสร้างรายงาน '+label+' เดือนนี้...\nจะส่งไฟล์ให้ทันทีเมื่อเสร็จครับ 📄' }])
     }
     case 'help':
       return handleCmd(uid, '/help', token)
@@ -1630,7 +1723,7 @@ async function handleCmd(uid, text, token) {
   if (cmd==='/help') {
     return replyLINE(token,[{
       type:'text',
-      text:'🤖 WorkLog AI — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
+      text:'🤖 WorkLog AI — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้" · "ส่ง PDF" · "ส่ง PPT"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
       quickReply:{
         items:[
           { type:'action', action:{ type:'message', label:'📊 แดชบอร์ด', text:'แดชบอร์ด' } },

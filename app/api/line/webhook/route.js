@@ -938,21 +938,25 @@ score = คะแนนประสิทธิภาพ 0-100`
 // PDF — text extraction + AI summarization & task detection (§7, §8)
 // ─────────────────────────────────────────
 async function extractPdfText(buf) {
-  // pdfjs 5.x (inside pdf-parse) needs these modern globals; polyfill so the
-  // extractor never hard-fails on an older runtime.
-  if (typeof Promise.withResolvers !== 'function') {
-    Promise.withResolvers = function () {
-      let resolve, reject
-      const promise = new Promise((res, rej) => { resolve = res; reject = rej })
-      return { promise, resolve, reject }
-    }
-  }
   try {
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(buf) })
-    const res = await parser.getText()
-    await parser.destroy().catch(()=>{})
-    return { text: (res.text || '').trim(), pages: res.total || 0, ok: true, err: '' }
+    // pdfjs-dist legacy build runs in Node with no worker and no DOM globals —
+    // the serverless-safe way to read a PDF's text layer.
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(buf),
+      isEvalSupported: false,
+      useWorkerFetch: false,
+      useSystemFonts: false,
+    }).promise
+    const pages = doc.numPages
+    let out = ''
+    for (let i = 1; i <= Math.min(pages, 30); i++) {
+      const page = await doc.getPage(i)
+      const tc = await page.getTextContent()
+      out += tc.items.map(it => ('str' in it ? it.str : '')).join(' ') + '\n'
+    }
+    await doc.destroy().catch(()=>{})
+    return { text: out.trim(), pages, ok: true, err: '' }
   } catch (e) {
     const msg = (e && (e.message || String(e))) || 'unknown'
     console.error('[PDF]', msg)

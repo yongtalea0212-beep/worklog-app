@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // These pull in heavy Node-native deps (pdfjs, fontkit, jszip) that must run
   // as externals rather than be bundled, so server-side PDF/PPTX generation and
   // PDF text extraction work in the serverless route.
-  serverExternalPackages: ['pdf-parse', 'pptxgenjs', '@react-pdf/renderer'],
+  serverExternalPackages: ['pdfjs-dist', 'pptxgenjs', '@react-pdf/renderer'],
   // Ship the Thai font files into the LINE webhook function so server-side
   // report PDFs can embed them from the filesystem.
   outputFileTracingIncludes: {

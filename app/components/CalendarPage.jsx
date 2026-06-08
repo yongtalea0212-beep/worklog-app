@@ -30,6 +30,38 @@ const fmtDate = s => {
 const safe = (v, fallback = '') => (v == null ? fallback : String(v))
 
 // ─────────────────────────────────────────
+// DEADLINE HEATMAP (§7) — urgency from days-until-due
+// ─────────────────────────────────────────
+const PRIORITIES = [
+  { id:'low',    label:'ต่ำ',  color:'#10B981' },
+  { id:'medium', label:'กลาง', color:'#F59E0B' },
+  { id:'high',   label:'สูง',  color:'#EF4444' },
+]
+const STATUSES = [
+  { id:'draft',       label:'📝 ร่าง',     color:'#9ca3af' },
+  { id:'in_progress', label:'🔄 กำลังทำ',  color:'#F59E0B' },
+  { id:'done',        label:'✅ เสร็จแล้ว', color:'#10B981' },
+]
+
+function deadlineInfo(dueDate) {
+  if (!dueDate) return null
+  const d = new Date(dueDate); if (isNaN(d)) return null
+  const today = new Date(); today.setHours(0,0,0,0)
+  const due = new Date(d); due.setHours(0,0,0,0)
+  const days = Math.round((due - today) / 86400000)
+  if (days < 0)  return { days, level:'overdue', color:'#991B1B', emoji:'⚠️', label:`เลยกำหนด ${-days} วัน` }
+  if (days === 0) return { days, level:'today',  color:'#8B5CF6', emoji:'🟣', label:'ครบกำหนดวันนี้' }
+  if (days < 3)  return { days, level:'urgent', color:'#EF4444', emoji:'🔴', label:`อีก ${days} วัน` }
+  if (days <= 7) return { days, level:'soon',   color:'#F59E0B', emoji:'🟠', label:`อีก ${days} วัน` }
+  return            { days, level:'ok',     color:'#10B981', emoji:'🟢', label:`อีก ${days} วัน` }
+}
+// FullCalendar event className for the urgency left-stripe
+const deadlineClass = dueDate => {
+  const i = deadlineInfo(dueDate)
+  return i && i.level !== 'ok' ? ['dl-' + i.level] : []
+}
+
+// ─────────────────────────────────────────
 // CSS
 // ─────────────────────────────────────────
 const CAL_CSS = `
@@ -103,15 +135,42 @@ const CAL_CSS = `
 .fc-scroller::-webkit-scrollbar-thumb { background: rgba(108,99,255,0.2); border-radius: 4px; }
 @keyframes cal-fade { from{opacity:0;transform:scale(.97)} to{opacity:1;transform:scale(1)} }
 @keyframes cal-slide { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+/* Deadline heatmap stripe on calendar events (§7) */
+.fc .fc-event.dl-overdue { box-shadow: inset 4px 0 0 #991B1B !important; }
+.fc .fc-event.dl-today   { box-shadow: inset 4px 0 0 #8B5CF6 !important; }
+.fc .fc-event.dl-urgent  { box-shadow: inset 4px 0 0 #EF4444 !important; }
+.fc .fc-event.dl-soon    { box-shadow: inset 4px 0 0 #F59E0B !important; }
+@keyframes ts-drawer { from{transform:translateX(100%)} to{transform:translateX(0)} }
+@keyframes ts-sheet  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+@keyframes ts-fade   { from{opacity:0} to{opacity:1} }
 `
 
 // ─────────────────────────────────────────
-// EVENT DETAIL MODAL (click event)
+// TASK DETAIL SIDEBAR (§12) — slide-in drawer (desktop) / bottom sheet (mobile)
+// with inline edit of status · priority · deadline (heatmap §7)
 // ─────────────────────────────────────────
-function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
+function fmtTimeRange(startAt, endAt) {
+  if (!startAt) return null
+  const opt = { hour:'2-digit', minute:'2-digit' }
+  try {
+    const s = new Date(startAt).toLocaleTimeString('th-TH', opt)
+    const e = endAt ? new Date(endAt).toLocaleTimeString('th-TH', opt) : ''
+    const dur = endAt ? Math.round((new Date(endAt) - new Date(startAt)) / 36e5 * 10) / 10 : null
+    return `${s}${e ? ' – ' + e : ''}${dur ? `  (${dur} ชม.)` : ''}`
+  } catch { return null }
+}
+
+function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, isMobile }) {
+  const props = event?.extendedProps || {}
+  const id = props.id
   const [imgIndex, setImgIndex] = useState(0)
-  const [imgLoaded, setImgLoaded] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  // Local mirrors for instant feedback on inline edits.
+  const [status, setStatus] = useState(safe(props.status, 'draft'))
+  const [priority, setPriority] = useState(safe(props.priority, 'medium'))
+  const [dueDate, setDueDate] = useState(props.dueDate || '')
+
+  const imageUrls = Array.isArray(props.imageUrls) ? props.imageUrls : []
 
   useEffect(() => {
     function onKey(e) {
@@ -121,28 +180,27 @@ function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [fullscreen, onClose])
+  }, [fullscreen, onClose, imageUrls.length])
 
   if (!event) return null
 
-  const props      = event.extendedProps || {}
   const title      = safe(event.title || props.title, 'ไม่มีชื่อ')
   const category   = safe(props.category, 'other')
   const hours      = props.hours || 0
-  const status     = safe(props.status, 'done')
   const tags       = Array.isArray(props.tags) ? props.tags : []
-  const imageUrls  = Array.isArray(props.imageUrls) ? props.imageUrls : []
   const aiSummary  = safe(props.aiSummary, '')
   const description= safe(props.description, '')
-  const date       = safe(event.startStr || props.date, '')
-  const id         = props.id
-
-  const cat = getCat(category)
-  const statusColor = status === 'done' ? '#10B981' : status === 'in_progress' ? '#F59E0B' : '#9ca3af'
-  const statusLabel = status === 'done' ? '✅ เสร็จแล้ว' : status === 'in_progress' ? '🔄 กำลังทำ' : '📝 ร่าง'
-  const hasImages = imageUrls.length > 0
-
+  const date       = safe(props.date || event.startStr, '')
+  const cat        = getCat(category)
+  const hasImages  = imageUrls.length > 0
   const isScheduled = !!props.startAt
+  const timeRange  = fmtTimeRange(props.startAt, props.endAt)
+  const dl         = deadlineInfo(dueDate)
+
+  const patch = (p) => { if (id != null) onPatch?.(id, p) }
+  function pickStatus(s)   { setStatus(s);   patch({ status: s }) }
+  function pickPriority(p) { setPriority(p); patch({ priority: p }) }
+  function pickDue(v)      { setDueDate(v);  patch({ dueDate: v || null }) }
 
   function handleEdit() {
     onEdit({
@@ -151,7 +209,7 @@ function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
       date: date ? date.split('T')[0] : new Date().toISOString().split('T')[0],
       imageUrls, imageCount: imageUrls.length,
       startAt: props.startAt || null, endAt: props.endAt || null,
-      dueDate: props.dueDate || null, priority: props.priority || 'medium',
+      dueDate: dueDate || null, priority,
     })
     onClose()
   }
@@ -159,22 +217,14 @@ function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
   // ── Fullscreen image viewer ──
   if (fullscreen && hasImages) {
     return (
-      <div
-        onClick={() => setFullscreen(false)}
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', zIndex:400, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:20 }}
-      >
-        <img
-          src={imageUrls[imgIndex]}
-          alt={title}
-          style={{ maxWidth:'90vw', maxHeight:'80vh', borderRadius:16, objectFit:'contain', boxShadow:'0 32px 80px rgba(0,0,0,0.8)' }}
-          onClick={e => e.stopPropagation()}
-        />
+      <div onClick={() => setFullscreen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', zIndex:400, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:20 }}>
+        <img src={imageUrls[imgIndex]} alt={title} style={{ maxWidth:'92vw', maxHeight:'80vh', borderRadius:16, objectFit:'contain', boxShadow:'0 32px 80px rgba(0,0,0,0.8)' }} onClick={e => e.stopPropagation()} />
         <div style={{ display:'flex', gap:10, marginTop:16, alignItems:'center' }}>
           {imageUrls.length > 1 && (
             <>
-              <button onClick={e=>{e.stopPropagation();setImgIndex(i=>Math.max(i-1,0))}} disabled={imgIndex===0} style={{ width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.2)',color:'white',cursor:imgIndex===0?'default':'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',opacity:imgIndex===0?.3:1 }}>←</button>
+              <button onClick={e=>{e.stopPropagation();setImgIndex(i=>Math.max(i-1,0))}} disabled={imgIndex===0} style={{ width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.2)',color:'white',cursor:imgIndex===0?'default':'pointer',fontSize:16,opacity:imgIndex===0?.3:1 }}>←</button>
               <span style={{ color:'rgba(255,255,255,0.6)', fontSize:13 }}>{imgIndex+1} / {imageUrls.length}</span>
-              <button onClick={e=>{e.stopPropagation();setImgIndex(i=>Math.min(i+1,imageUrls.length-1))}} disabled={imgIndex===imageUrls.length-1} style={{ width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.2)',color:'white',cursor:imgIndex===imageUrls.length-1?'default':'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',opacity:imgIndex===imageUrls.length-1?.3:1 }}>→</button>
+              <button onClick={e=>{e.stopPropagation();setImgIndex(i=>Math.min(i+1,imageUrls.length-1))}} disabled={imgIndex===imageUrls.length-1} style={{ width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.2)',color:'white',cursor:imgIndex===imageUrls.length-1?'default':'pointer',fontSize:16,opacity:imgIndex===imageUrls.length-1?.3:1 }}>→</button>
             </>
           )}
           <button onClick={() => setFullscreen(false)} style={{ padding:'7px 18px',background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:10,color:'white',fontSize:13,cursor:'pointer',fontFamily:'inherit',marginLeft:8 }}>ปิด</button>
@@ -183,157 +233,137 @@ function EventDetailModal({ event, onClose, onEdit, onDelete, onUnschedule }) {
     )
   }
 
+  // Responsive container: right drawer (desktop) / bottom sheet (mobile)
+  const overlayStyle = {
+    position:'fixed', inset:0, background:'rgba(40,50,90,0.28)', backdropFilter:'blur(6px)', WebkitBackdropFilter:'blur(6px)',
+    zIndex:200, display:'flex',
+    justifyContent: isMobile ? 'center' : 'flex-end',
+    alignItems: isMobile ? 'flex-end' : 'stretch',
+    animation:'ts-fade .18s ease',
+  }
+  const panelStyle = {
+    background:'rgba(255,255,255,0.96)', backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+    border:'1px solid rgba(255,255,255,0.99)', overflowY:'auto', fontFamily:'inherit',
+    boxShadow:'-12px 0 48px rgba(60,70,130,0.18)',
+    ...(isMobile
+      ? { width:'100%', maxHeight:'92vh', borderRadius:'24px 24px 0 0', animation:'ts-sheet .26s cubic-bezier(.2,.8,.2,1)' }
+      : { width:'min(460px,100%)', height:'100vh', borderRadius:'24px 0 0 24px', animation:'ts-drawer .26s cubic-bezier(.2,.8,.2,1)' }),
+  }
+
+  const segBtn = (active, color) => ({
+    flex:1, padding:'8px 6px', borderRadius:9, fontSize:12, fontWeight:active?700:500, cursor:'pointer',
+    fontFamily:'inherit', transition:'all .12s',
+    border:'1px solid '+(active?color:'rgba(200,210,240,0.6)'),
+    background: active ? color+'18' : 'rgba(255,255,255,0.6)',
+    color: active ? color : '#6b7099',
+  })
+
   return (
-    <div
-      style={{ position:'fixed', inset:0, background:'rgba(80,100,200,0.2)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20, animation:'cal-fade .2s ease' }}
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <div style={{
-        background:'rgba(255,255,255,0.92)',
-        backdropFilter:'blur(48px)', WebkitBackdropFilter:'blur(48px)',
-        border:'1px solid rgba(255,255,255,0.99)',
-        borderRadius:28,
-        maxWidth:500, width:'100%',
-        maxHeight:'88vh', overflowY:'auto',
-        boxShadow:'0 32px 80px rgba(80,100,200,0.25)',
-        animation:'cal-slide .25s ease',
-        overflow:'hidden',
-      }}>
+    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={panelStyle}>
 
-        {/* ── Main Image Preview (medium size) ── */}
+        {/* Hero image */}
         {hasImages && (
-          <div
-            style={{ position:'relative', height:240, background:cat.bg, overflow:'hidden', cursor:'zoom-in', flexShrink:0 }}
-            onClick={() => setFullscreen(true)}
-          >
-            {/* Skeleton */}
-            {!imgLoaded && (
-              <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg,rgba(200,205,240,0.4) 25%,rgba(200,205,240,0.7) 50%,rgba(200,205,240,0.4) 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.4s infinite' }}/>
-            )}
-
-            <img
-              src={imageUrls[imgIndex]}
-              alt={title}
-              onLoad={() => setImgLoaded(true)}
-              onError={() => setImgLoaded(true)}
-              style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', transition:'transform .3s' }}
-            />
-
-            {/* Gradient overlay bottom */}
-            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:80, background:'linear-gradient(transparent,rgba(0,0,0,0.35))' }}/>
-
-            {/* Zoom hint */}
-            <div style={{ position:'absolute', bottom:12, left:14, fontSize:11, color:'rgba(255,255,255,0.85)', fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
-              <span style={{ background:'rgba(0,0,0,0.35)', padding:'2px 8px', borderRadius:20, backdropFilter:'blur(6px)' }}>🔍 คลิกเพื่อขยาย</span>
-            </div>
-
-            {/* Nav dots */}
-            {imageUrls.length > 1 && (
-              <div style={{ position:'absolute', bottom:12, left:'50%', transform:'translateX(-50%)', display:'flex', gap:5 }}>
-                {imageUrls.map((_,i) => (
-                  <button key={i} onClick={e=>{e.stopPropagation();setImgIndex(i);setImgLoaded(false)}} style={{ width:i===imgIndex?22:8, height:8, borderRadius:4, border:'none', background:i===imgIndex?'white':'rgba(255,255,255,0.5)', cursor:'pointer', transition:'all .2s', padding:0 }}/>
-                ))}
-              </div>
-            )}
-
-            {/* Count badge */}
-            {imageUrls.length > 1 && (
-              <div style={{ position:'absolute', top:12, right:12, background:'rgba(0,0,0,0.45)', backdropFilter:'blur(6px)', color:'white', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>
-                {imgIndex+1}/{imageUrls.length}
-              </div>
-            )}
-
-            {/* Close button */}
-            <button onClick={e=>{e.stopPropagation();onClose()}} style={{ position:'absolute', top:12, left:12, width:32, height:32, borderRadius:10, background:'rgba(255,255,255,0.85)', border:'none', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)', fontWeight:700, color:'#1a1a2e' }}>×</button>
+          <div style={{ position:'relative', height:200, background:cat.bg, overflow:'hidden', cursor:'zoom-in' }} onClick={() => setFullscreen(true)}>
+            <img src={imageUrls[imgIndex]} alt={title} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:70, background:'linear-gradient(transparent,rgba(0,0,0,0.35))' }}/>
+            <span style={{ position:'absolute', bottom:10, left:14, fontSize:11, color:'#fff', background:'rgba(0,0,0,0.35)', padding:'2px 8px', borderRadius:20 }}>🔍 คลิกเพื่อขยาย{imageUrls.length>1?` · ${imgIndex+1}/${imageUrls.length}`:''}</span>
           </div>
         )}
 
-        {/* ── Thumbnail strip ── */}
-        {imageUrls.length > 1 && (
-          <div style={{ display:'flex', gap:6, padding:'10px 20px', background:'rgba(255,255,255,0.5)', borderBottom:'1px solid rgba(200,210,240,0.3)', overflowX:'auto' }}>
-            {imageUrls.map((url,i) => (
-              <div key={i} onClick={() => {setImgIndex(i);setImgLoaded(false)}} style={{ width:52, height:52, borderRadius:9, overflow:'hidden', border:'2px solid '+(i===imgIndex?'#6C63FF':'rgba(200,210,240,0.5)'), cursor:'pointer', flexShrink:0, transition:'all .15s' }}>
-                <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} loading="lazy"/>
-              </div>
-            ))}
+        <div style={{ padding:'18px 20px 24px' }}>
+          {/* Top bar */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'#9ca3af', letterSpacing:1 }}>รายละเอียดงาน</span>
+            <button onClick={onClose} style={{ width:30, height:30, borderRadius:9, background:'rgba(0,0,0,0.04)', border:'none', fontSize:18, cursor:'pointer', color:'#6b7099' }}>×</button>
           </div>
-        )}
 
-        {/* ── Content ── */}
-        <div style={{ padding:22 }}>
-
-          {/* Header */}
-          {!hasImages && (
-            <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:4 }}>
-              <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af', lineHeight:1 }}>×</button>
-            </div>
-          )}
-
-          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+          {/* Chips */}
+          <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:10 }}>
             <span style={{ background:cat.bg, color:cat.color, fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20 }}>{cat.icon} {cat.label}</span>
-            <span style={{ background:statusColor+'15', color:statusColor, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{statusLabel}</span>
+            {dl && <span style={{ background:dl.color+'18', color:dl.color, fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20 }}>{dl.emoji} {dl.label}</span>}
           </div>
 
-          <div style={{ fontSize:19, fontWeight:700, color:'#1a1a2e', lineHeight:1.3, marginBottom:5 }}>{title}</div>
-          <div style={{ fontSize:13, color:'#9ca3af', marginBottom:16 }}>{fmtDate(date)}</div>
+          {/* Title + time */}
+          <div style={{ fontSize:19, fontWeight:700, color:'#1a1a2e', lineHeight:1.3, marginBottom:6 }}>{title}</div>
+          <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:4 }}>📅 {fmtDate(date)}</div>
+          {timeRange
+            ? <div style={{ fontSize:12.5, color:cat.color, fontWeight:600, marginBottom:16 }}>🕐 {timeRange}</div>
+            : <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:16 }}>🕐 ยังไม่จัดเวลา</div>}
+
+          {/* Inline editors */}
+          <div style={{ background:'rgba(248,249,255,0.7)', border:'1px solid rgba(200,210,240,0.5)', borderRadius:14, padding:14, marginBottom:14 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7 }}>สถานะ</div>
+            <div style={{ display:'flex', gap:6, marginBottom:13 }}>
+              {STATUSES.map(s => <button key={s.id} onClick={()=>pickStatus(s.id)} style={segBtn(status===s.id, s.color)}>{s.label}</button>)}
+            </div>
+            <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7 }}>ความสำคัญ (Priority)</div>
+            <div style={{ display:'flex', gap:6, marginBottom:13 }}>
+              {PRIORITIES.map(p => <button key={p.id} onClick={()=>pickPriority(p.id)} style={segBtn(priority===p.id, p.color)}>{p.label}</button>)}
+            </div>
+            <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7 }}>กำหนดส่ง (Deadline)</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <input type="date" value={dueDate || ''} onChange={e=>pickDue(e.target.value)} style={{ flex:1, padding:'8px 10px', background:'rgba(255,255,255,0.8)', border:'1px solid rgba(200,210,240,0.6)', borderRadius:9, fontSize:13, color:'#1a1a2e', fontFamily:'inherit', outline:'none' }} />
+              {dueDate && <button onClick={()=>pickDue('')} style={{ padding:'8px 12px', background:'rgba(255,255,255,0.6)', border:'1px solid rgba(200,210,240,0.6)', borderRadius:9, fontSize:12, color:'#9ca3af', cursor:'pointer', fontFamily:'inherit' }}>ล้าง</button>}
+            </div>
+          </div>
 
           {/* Stats */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:16 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:14 }}>
             {[
-              { label:'เวลา',      value:`${hours} ชม.`,        color:cat.color    },
-              { label:'ไฟล์',     value:`${imageUrls.length}`,  color:'#6C63FF'    },
-              { label:'Tags',      value:`${tags.length}`,       color:'#8B5CF6'    },
+              { label:'ชั่วโมง', value:`${hours}`, color:cat.color },
+              { label:'ไฟล์แนบ', value:`${imageUrls.length}`, color:'#6C63FF' },
+              { label:'แท็ก', value:`${tags.length}`, color:'#8B5CF6' },
             ].map((s,i) => (
-              <div key={i} style={{ background:'rgba(255,255,255,0.6)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:11, padding:'9px 11px', textAlign:'center' }}>
+              <div key={i} style={{ background:'rgba(255,255,255,0.6)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:11, padding:'9px 8px', textAlign:'center' }}>
                 <div style={{ fontSize:18, fontWeight:700, color:s.color, lineHeight:1 }}>{s.value}</div>
-                <div style={{ fontSize:10, color:'#9ca3af', marginTop:3, fontWeight:500 }}>{s.label}</div>
+                <div style={{ fontSize:10, color:'#9ca3af', marginTop:3 }}>{s.label}</div>
               </div>
             ))}
           </div>
 
-          {/* AI Summary */}
-          {aiSummary && (
-            <div style={{ background:'linear-gradient(135deg,rgba(108,99,255,0.07),rgba(167,139,250,0.04))', border:'1px solid rgba(108,99,255,0.16)', borderRadius:13, padding:'12px 14px', marginBottom:14 }}>
-              <div style={{ fontSize:9, fontWeight:700, color:'#6C63FF', letterSpacing:1, marginBottom:5 }}>✨ AI SUMMARY</div>
-              <div style={{ fontSize:13, color:'#4a5568', lineHeight:1.75 }}>{aiSummary}</div>
+          {/* Attachments */}
+          {hasImages && (
+            <div style={{ display:'flex', gap:6, marginBottom:14, overflowX:'auto', paddingBottom:2 }}>
+              {imageUrls.map((url,i) => (
+                <div key={i} onClick={()=>{setImgIndex(i);setFullscreen(true)}} style={{ width:54, height:54, borderRadius:9, overflow:'hidden', border:'2px solid '+(i===imgIndex?cat.color:'rgba(200,210,240,0.5)'), cursor:'pointer', flexShrink:0 }}>
+                  <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} loading="lazy" />
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Description fallback */}
+          {/* AI summary / description */}
+          {aiSummary && (
+            <div style={{ background:'linear-gradient(135deg,rgba(108,99,255,0.07),rgba(167,139,250,0.04))', border:'1px solid rgba(108,99,255,0.16)', borderRadius:13, padding:'12px 14px', marginBottom:12 }}>
+              <div style={{ fontSize:9, fontWeight:700, color:'#6C63FF', letterSpacing:1, marginBottom:5 }}>✨ AI SUMMARY</div>
+              <div style={{ fontSize:13, color:'#4a5568', lineHeight:1.7 }}>{aiSummary}</div>
+            </div>
+          )}
           {!aiSummary && description && (
-            <div style={{ background:'rgba(255,255,255,0.55)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:13, padding:'12px 14px', marginBottom:14 }}>
+            <div style={{ background:'rgba(255,255,255,0.55)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:13, padding:'12px 14px', marginBottom:12 }}>
               <div style={{ fontSize:9, fontWeight:700, color:'#9ca3af', letterSpacing:1, marginBottom:5 }}>DESCRIPTION</div>
-              <div style={{ fontSize:13, color:'#4a5568', lineHeight:1.75 }}>{description}</div>
+              <div style={{ fontSize:13, color:'#4a5568', lineHeight:1.7 }}>{description}</div>
             </div>
           )}
 
           {/* Tags */}
           {tags.length > 0 && (
             <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:16 }}>
-              {tags.map((t,i) => (
-                <span key={i} style={{ background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.18)', color:'#6C63FF', fontSize:11, fontWeight:500, padding:'3px 9px', borderRadius:20 }}>#{t}</span>
-              ))}
+              {tags.map((t,i) => <span key={i} style={{ background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.18)', color:'#6C63FF', fontSize:11, fontWeight:500, padding:'3px 9px', borderRadius:20 }}>#{t}</span>)}
             </div>
           )}
 
           {/* Actions */}
-          <div style={{ display:'flex', gap:8, justifyContent:'flex-end', paddingTop:14, borderTop:'1px solid rgba(0,0,0,0.06)' }}>
-            <button onClick={() => { onDelete(id); onClose() }} style={{ padding:'9px 18px', background:'rgba(239,68,68,0.07)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:11, fontSize:13, color:'#EF4444', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>ลบ</button>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', paddingTop:14, borderTop:'1px solid rgba(0,0,0,0.06)' }}>
+            <button onClick={() => { onDelete(id); onClose() }} style={{ padding:'9px 16px', background:'rgba(239,68,68,0.07)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:11, fontSize:13, color:'#EF4444', cursor:'pointer', fontFamily:'inherit' }}>ลบ</button>
             {isScheduled && onUnschedule && (
-              <button onClick={() => onUnschedule(id)} style={{ padding:'9px 18px', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:11, fontSize:13, color:'#F59E0B', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>↩ ยกเลิกเวลา</button>
+              <button onClick={() => onUnschedule(id)} style={{ padding:'9px 16px', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:11, fontSize:13, color:'#F59E0B', cursor:'pointer', fontFamily:'inherit' }}>↩ ยกเลิกเวลา</button>
             )}
-            {hasImages && (
-              <button onClick={() => setFullscreen(true)} style={{ padding:'9px 18px', background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.2)', borderRadius:11, fontSize:13, color:'#6C63FF', cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}>🖼 ดูรูปเต็ม</button>
-            )}
-            <button onClick={handleEdit} style={{ padding:'9px 24px', background:'linear-gradient(135deg,#6C63FF,#9B8FFF)', border:'none', borderRadius:11, fontSize:13, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 12px rgba(108,99,255,0.32)' }}>✏️ แก้ไข</button>
+            <button onClick={handleEdit} style={{ flex:1, minWidth:120, padding:'9px 16px', background:'linear-gradient(135deg,#6C63FF,#9B8FFF)', border:'none', borderRadius:11, fontSize:13, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 12px rgba(108,99,255,0.32)' }}>✏️ แก้ไขแบบเต็ม</button>
           </div>
         </div>
       </div>
-      <style>{`
-        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-        @keyframes cal-fade{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-        @keyframes cal-slide{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-      `}</style>
     </div>
   )
 }
@@ -489,9 +519,10 @@ function UnscheduledPanel({ tasks, panelRef, isMobile }) {
                 }}
               >
                 <div style={{ fontSize:12.5, fontWeight:600, color:'#1a1a2e', lineHeight:1.3, marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{safe(t.title,'งาน')}</div>
-                <div style={{ fontSize:10.5, color:'#9ca3af', display:'flex', gap:6 }}>
+                <div style={{ fontSize:10.5, color:'#9ca3af', display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
                   <span>{cat.icon} {cat.label}</span>
                   <span>· {hrsOf(t) || 1} ชม.</span>
+                  {(() => { const dl = deadlineInfo(t.dueDate); return dl ? <span style={{ color:dl.color, fontWeight:700 }}>· {dl.emoji} {dl.label}</span> : null })()}
                 </div>
               </div>
             )
@@ -526,7 +557,7 @@ function CategoryLegend({ logs }) {
 // ─────────────────────────────────────────
 // MAIN CALENDAR PAGE
 // ─────────────────────────────────────────
-export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, onReschedule }) {
+export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, onReschedule, onPatch }) {
   const initialMobile = typeof window !== 'undefined' && window.innerWidth <= 820
   const [detailEvent, setDetailEvent] = useState(null)
   const [quickAddDate, setQuickAddDate] = useState(null)
@@ -565,6 +596,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       backgroundColor: cat.color,
       borderColor: 'transparent',
       textColor: '#ffffff',
+      classNames: deadlineClass(log.dueDate),
       extendedProps: {
         id:          log.id,
         title:       safe(log.title, 'ไม่มีชื่อ'),
@@ -734,14 +766,16 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
         <span>กดที่งานเพื่อดูรายละเอียด</span>
       </div>
 
-      {/* Modals */}
+      {/* Task detail sidebar */}
       {detailEvent && (
-        <EventDetailModal
+        <TaskSidebar
           event={detailEvent}
+          isMobile={isMobile}
           onClose={() => setDetailEvent(null)}
           onEdit={handleEdit}
           onDelete={id => { onDeleteLog(id); setDetailEvent(null) }}
           onUnschedule={id => { reschedule(id, { startAt:null, endAt:null }); setDetailEvent(null) }}
+          onPatch={onPatch}
         />
       )}
 

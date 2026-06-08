@@ -938,15 +938,25 @@ score = คะแนนประสิทธิภาพ 0-100`
 // PDF — text extraction + AI summarization & task detection (§7, §8)
 // ─────────────────────────────────────────
 async function extractPdfText(buf) {
+  // pdfjs 5.x (inside pdf-parse) needs these modern globals; polyfill so the
+  // extractor never hard-fails on an older runtime.
+  if (typeof Promise.withResolvers !== 'function') {
+    Promise.withResolvers = function () {
+      let resolve, reject
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+  }
   try {
     const { PDFParse } = await import('pdf-parse')
     const parser = new PDFParse({ data: new Uint8Array(buf) })
     const res = await parser.getText()
     await parser.destroy().catch(()=>{})
-    return { text: (res.text || '').trim(), pages: res.total || 0 }
+    return { text: (res.text || '').trim(), pages: res.total || 0, ok: true, err: '' }
   } catch (e) {
-    console.error('[PDF]', e?.message || e)
-    return { text: '', pages: 0 }
+    const msg = (e && (e.message || String(e))) || 'unknown'
+    console.error('[PDF]', msg)
+    return { text: '', pages: 0, ok: false, err: msg.slice(0, 140) }
   }
 }
 
@@ -2002,10 +2012,14 @@ if (mtype==='text') {
     const buf = await getContent(event.message.id)
     if (!buf) return replyLINE(token,[{type:'text',text:'⚠️ ดาวน์โหลดไฟล์ไม่สำเร็จ ลองส่งใหม่อีกครั้งครับ'}])
 
-    const { text, pages } = await extractPdfText(buf)
-    // Scanned/image PDFs yield little or no extractable text → be honest.
+    const { text, pages, ok, err } = await extractPdfText(buf)
+    // Extraction threw → surface the reason so failures are diagnosable.
+    if (!ok) {
+      return replyLINE(token,[{type:'text',text:'⚠️ อ่านไฟล์ PDF ไม่สำเร็จครับ\n('+err+')\nลองส่งใหม่ หรือพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
+    }
+    // Parsed OK but little/no text → genuinely a scanned/image PDF.
     if (text.replace(/\s/g,'').length < 40) {
-      return replyLINE(token,[{type:'text',text:'📄 รับ "'+fileName+'" ('+(pages||'?')+' หน้า) แล้ว\nแต่ดึงข้อความไม่ได้ — อาจเป็น PDF สแกน/รูปภาพ ซึ่งยังไม่รองรับ OCR\nพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
+      return replyLINE(token,[{type:'text',text:'📄 รับ "'+fileName+'" ('+(pages||'?')+' หน้า) แล้ว\nแต่ในไฟล์ไม่มีชั้นข้อความ — น่าจะเป็น PDF สแกน/รูปภาพ ซึ่งยังไม่รองรับ OCR\nพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
     }
 
     const info = await analyzePdf(text, pages)

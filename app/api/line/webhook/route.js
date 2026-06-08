@@ -118,8 +118,8 @@ async function saveWorklog(uid, d) {
     const {data,error}=await supabase.from('work_logs').insert({
       line_user_id:uid, title:d.title||'งานจาก LINE', description:d.desc||'',
       ai_summary:d.summary||'', category:d.category||'other', hours_spent:d.hours||1,
-      status:'done', tags:d.tags||[], date:new Date().toISOString().split('T')[0],
-      image_urls:d.images||[], source:'line',
+      status:d.status||'done', tags:d.tags||[], date:d.date||new Date().toISOString().split('T')[0],
+      image_urls:d.images||[], source:d.source||'line',
     }).select()
     if (error){ console.error('[SAVE]',error.message); return null }
     return data?.[0]||null
@@ -167,14 +167,14 @@ async function getRecentLogs(uid, n=5) {
 // ─────────────────────────────────────────
 // CLAUDE
 // ─────────────────────────────────────────
-async function callAI(prompt) {
+async function callAI(prompt, { maxTokens = 500, timeoutMs = 10000 } = {}) {
   if (!ANTHROPIC_KEY) return ''
-  const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),10000)
+  const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),timeoutMs)
   try {
     const r=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:500,messages:[{role:'user',content:prompt}]}),
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:maxTokens,messages:[{role:'user',content:prompt}]}),
       signal:ctrl.signal,
     })
     clearTimeout(t)
@@ -933,6 +933,49 @@ score = คะแนนประสิทธิภาพ 0-100`
 }
 
 // ─────────────────────────────────────────
+// PDF — text extraction + AI summarization & task detection (§7, §8)
+// ─────────────────────────────────────────
+async function extractPdfText(buf) {
+  try {
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: new Uint8Array(buf) })
+    const res = await parser.getText()
+    await parser.destroy().catch(()=>{})
+    return { text: (res.text || '').trim(), pages: res.total || 0 }
+  } catch (e) {
+    console.error('[PDF]', e?.message || e)
+    return { text: '', pages: 0 }
+  }
+}
+
+async function analyzePdf(text, pages) {
+  const clipped = text.slice(0, 6000)
+  const p = `วิเคราะห์เอกสารต่อไปนี้ สรุปและแยกงานที่ควรทำ (tasks) ตอบ JSON เท่านั้น ห้าม markdown
+จำนวนหน้า: ${pages}
+เนื้อหาเอกสาร:
+"""${clipped}"""
+หมวดงาน: graphic|video|photo|marketing|ai|branding|pos|other
+ตอบรูปแบบ: {"summary":"สรุปเอกสาร 2-3 ประโยค","topics":["หัวข้อสำคัญ"],"action_items":["สิ่งที่ต้องทำ"],"deadlines":["กำหนดส่ง/วันสำคัญ"],"responsible":["ผู้รับผิดชอบ"],"tasks":[{"title":"ชื่องานกระชับ","category":"หมวด","hours":1}]}
+tasks = งานที่ควรสร้างจากเอกสารนี้ สูงสุด 8 งาน ถ้าไม่พบให้เป็น []`
+  try {
+    const txt = await callAI(p, { maxTokens: 2000, timeoutMs: 20000 })
+    const s = txt.indexOf('{'), e = txt.lastIndexOf('}')
+    if (s === -1 || e === -1) throw new Error('no json')
+    const parsed = JSON.parse(txt.slice(s, e + 1))
+    return {
+      summary: parsed.summary || '',
+      topics: Array.isArray(parsed.topics) ? parsed.topics : [],
+      action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+      deadlines: Array.isArray(parsed.deadlines) ? parsed.deadlines : [],
+      responsible: Array.isArray(parsed.responsible) ? parsed.responsible : [],
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(0, 8) : [],
+    }
+  } catch {
+    return { summary: '', topics: [], action_items: [], deadlines: [], responsible: [], tasks: [] }
+  }
+}
+
+// ─────────────────────────────────────────
 // FLEX BUILDERS — Command Center
 // ─────────────────────────────────────────
 function btn(label, data, color, style='secondary') {
@@ -1145,6 +1188,92 @@ function msgAIAnalysis(log, a) {
       styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
     }
   }]
+}
+
+// PDF document summary card (§8)
+function msgPdfSummary(fileName, info) {
+  const section = (emoji, label, items, color) => (items && items.length ? [{
+    type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+    contents:[
+      { type:'text', text:emoji+' '+label, size:'xs', weight:'bold', color:color },
+      ...items.slice(0,5).map(it=>({ type:'text', text:'• '+String(it), size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' })),
+    ]
+  }] : [])
+  return {
+    type:'flex', altText:'📄 สรุปเอกสาร: '+(fileName||'PDF'),
+    contents:{
+      type:'bubble', size:'mega',
+      header:{
+        type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
+        contents:[
+          { type:'box', layout:'horizontal', contents:[
+            { type:'text', text:'📄 สรุปเอกสาร', weight:'bold', size:'md', color:BRAND.purple, flex:1 },
+            { type:'text', text:(info.pages||0)+' หน้า', size:'xs', color:BRAND.textMuted, flex:0, align:'end', gravity:'center' },
+          ]},
+          { type:'text', text:fileName||'PDF', size:'xs', color:BRAND.textMuted, wrap:true, margin:'xs' },
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'14px', spacing:'md', backgroundColor:BRAND.cardBg,
+        contents:[
+          ...(info.summary ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px', backgroundColor:BRAND.purpleBg,
+            contents:[
+              { type:'text', text:'✨ สรุป', size:'xs', weight:'bold', color:BRAND.purple },
+              { type:'text', text:info.summary, size:'sm', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+          ...section('🏷', 'หัวข้อ', info.topics, BRAND.cyan),
+          ...section('📌', 'สิ่งที่ต้องทำ', info.action_items, BRAND.amber),
+          ...section('📅', 'กำหนดส่ง', info.deadlines, BRAND.red),
+          ...section('👤', 'ผู้รับผิดชอบ', info.responsible, BRAND.pink),
+        ]
+      },
+      styles:{ header:{ separator:false } }
+    }
+  }
+}
+
+// Detected-tasks confirmation card (§7)
+function msgPdfTasks(tasks) {
+  const rows = tasks.map((t,i)=>{
+    const cat = CAT[t.category] || CAT.other
+    return {
+      type:'box', layout:'horizontal', spacing:'sm', paddingTop: i===0?'2px':'6px',
+      contents:[
+        { type:'text', text:cat.emoji, size:'sm', flex:0 },
+        { type:'text', text:t.title||'งาน', size:'sm', color:BRAND.text, flex:1, wrap:true },
+        { type:'text', text:(t.hours||1)+'h', size:'xs', weight:'bold', color:cat.color, flex:0 },
+      ]
+    }
+  })
+  return {
+    type:'flex', altText:'🤖 AI พบ '+tasks.length+' งานในเอกสาร',
+    contents:{
+      type:'bubble', size:'mega',
+      header:{
+        type:'box', layout:'horizontal', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
+        contents:[
+          { type:'text', text:'🤖 AI พบงานในเอกสาร', weight:'bold', size:'md', color:BRAND.purple, flex:1 },
+          { type:'box', layout:'vertical', flex:0, cornerRadius:'20px', paddingAll:'4px', paddingStart:'12px', paddingEnd:'12px', backgroundColor:BRAND.purple,
+            contents:[{ type:'text', text:String(tasks.length), size:'sm', weight:'bold', color:BRAND.white }] },
+        ]
+      },
+      body:{ type:'box', layout:'vertical', paddingAll:'14px', backgroundColor:BRAND.cardBg, contents:rows },
+      footer:{
+        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'button', style:'primary', height:'sm', color:BRAND.green,
+            action:{ type:'postback', label:'✅ สร้างทั้งหมด ('+tasks.length+')', data:'action=pdf_create' } },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[
+            btn('✏️ แก้ในแอป', { uri:APP_URL }, '#E8E0FF'),
+            btn('❌ ยกเลิก', { postback:'action=pdf_cancel' }, '#E8E0FF'),
+          ]},
+        ]
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+    }
+  }
 }
 
 // ─────────────────────────────────────────
@@ -1484,6 +1613,35 @@ async function processEvent(event) {
       const res = await routeIntent(uid, cmd, token, {})
       if (res !== null) return res
     }
+
+    // Create all tasks detected from a PDF (§7)
+    if (action === 'pdf_create') {
+      const s = getSession(uid)
+      const tasks = (s.state === 'pdf_tasks' && Array.isArray(s.data.tasks)) ? s.data.tasks : []
+      if (!tasks.length) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ กรุณาส่งไฟล์ PDF อีกครั้งครับ'}])
+      let created = 0
+      for (const t of tasks) {
+        const saved = await saveWorklog(uid, {
+          title: t.title || 'งานจากเอกสาร', desc: '', summary: t.title || '',
+          category: t.category || 'other', hours: t.hours || 1,
+          tags: ['PDF'], status: 'draft', source: 'line-pdf',
+        })
+        if (saved) created++
+      }
+      clearSession(uid)
+      return replyLINE(token,[{
+        type:'text',
+        text:'✅ สร้าง '+created+' งานจากเอกสารแล้ว (สถานะ: ร่าง)\nเปิดแก้ไขรายละเอียดได้ในแอป',
+        quickReply:{items:[
+          { type:'action', action:{ type:'message', label:'📝 งานค้าง', text:'งานค้าง' } },
+          { type:'action', action:{ type:'uri', label:'🌐 เปิดแอป', uri:APP_URL } },
+        ]}
+      }])
+    }
+    if (action === 'pdf_cancel') {
+      clearSession(uid)
+      return replyLINE(token,[{type:'text',text:'ยกเลิกแล้ว ไม่ได้สร้างงานจากเอกสาร ❌'}])
+    }
     return
   }
 
@@ -1559,7 +1717,31 @@ if (mtype==='text') {
 
   if (mtype==='video') return replyLINE(token,[{type:'text',text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก'}])
   if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับเสียงแล้ว!\nพิมพ์บอกว่าทำงานอะไร 📝'}])
-  if (mtype==='file') return replyLINE(token,[{type:'text',text:'📎 รับไฟล์ "'+(event.message.fileName||'ไฟล์')+'" แล้ว ✅\nพิมพ์อธิบายงานในไฟล์นี้เพื่อบันทึก'}])
+  if (mtype==='file') {
+    const fileName = event.message.fileName || 'ไฟล์'
+    // Only PDFs get the intelligence pipeline; other files are acknowledged.
+    if (!/\.pdf$/i.test(fileName)) {
+      return replyLINE(token,[{type:'text',text:'📎 รับไฟล์ "'+fileName+'" แล้ว ✅\nรองรับการวิเคราะห์เฉพาะไฟล์ PDF ในตอนนี้ — พิมพ์อธิบายงานในไฟล์นี้เพื่อบันทึกได้ครับ'}])
+    }
+    const buf = await getContent(event.message.id)
+    if (!buf) return replyLINE(token,[{type:'text',text:'⚠️ ดาวน์โหลดไฟล์ไม่สำเร็จ ลองส่งใหม่อีกครั้งครับ'}])
+
+    const { text, pages } = await extractPdfText(buf)
+    // Scanned/image PDFs yield little or no extractable text → be honest.
+    if (text.replace(/\s/g,'').length < 40) {
+      return replyLINE(token,[{type:'text',text:'📄 รับ "'+fileName+'" ('+(pages||'?')+' หน้า) แล้ว\nแต่ดึงข้อความไม่ได้ — อาจเป็น PDF สแกน/รูปภาพ ซึ่งยังไม่รองรับ OCR\nพิมพ์อธิบายงานในเอกสารนี้เพื่อบันทึกแทนได้ครับ'}])
+    }
+
+    const info = await analyzePdf(text, pages)
+    const messages = [msgPdfSummary(fileName, info)]
+    if (info.tasks.length) {
+      setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })
+      messages.push(msgPdfTasks(info.tasks))
+    } else {
+      messages.push({ type:'text', text:'ℹ️ ไม่พบงานที่ชัดเจนให้สร้างจากเอกสารนี้' })
+    }
+    return replyLINE(token, messages)
+  }
 }
 
 // ─────────────────────────────────────────

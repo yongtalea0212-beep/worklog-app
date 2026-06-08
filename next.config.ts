@@ -9,7 +9,13 @@ const nextConfig: NextConfig = {
   // Ship the Thai font files and the native canvas binary into the LINE webhook
   // function (so report PDFs embed fonts and pdfjs can polyfill DOMMatrix).
   outputFileTracingIncludes: {
-    '/api/line/webhook': ['./public/fonts/**', './node_modules/@napi-rs/**'],
+    '/api/line/webhook': [
+      './public/fonts/**',
+      './node_modules/@napi-rs/**',
+      // pdfjs dynamically imports its worker at runtime; the tracer can't see
+      // that, so force the legacy build (incl. pdf.worker.mjs) into the bundle.
+      './node_modules/pdfjs-dist/legacy/build/**',
+    ],
   },
 }
 

@@ -451,17 +451,22 @@ function CalendarStats({ logs }) {
 // ─────────────────────────────────────────
 // UNSCHEDULED TASKS PANEL (§1) — drag onto the timeline
 // ─────────────────────────────────────────
-function UnscheduledPanel({ tasks, panelRef }) {
+function UnscheduledPanel({ tasks, panelRef, isMobile }) {
   return (
-    <div style={{ width:240, flexShrink:0 }}>
-      <div style={{ position:'sticky', top:12 }}>
+    <div style={{ width: isMobile ? '100%' : 240, flexShrink:0 }}>
+      <div style={{ position: isMobile ? 'static' : 'sticky', top:12 }}>
         <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10 }}>
           <span style={{ fontSize:13, fontWeight:700, color:'#1a1a2e' }}>📥 งานที่ยังไม่จัดเวลา</span>
           <span style={{ fontSize:11, fontWeight:700, color:'#6C63FF', background:'rgba(108,99,255,0.1)', borderRadius:20, padding:'1px 8px' }}>{tasks.length}</span>
         </div>
-        <div ref={panelRef} style={{ display:'flex', flexDirection:'column', gap:7, maxHeight:560, overflowY:'auto', paddingRight:4 }}>
+        <div
+          ref={panelRef}
+          style={ isMobile
+            ? { display:'flex', flexDirection:'row', gap:8, overflowX:'auto', paddingBottom:6, WebkitOverflowScrolling:'touch' }
+            : { display:'flex', flexDirection:'column', gap:7, maxHeight:560, overflowY:'auto', paddingRight:4 } }
+        >
           {tasks.length === 0 && (
-            <div style={{ fontSize:12, color:'#9ca3af', textAlign:'center', padding:'24px 8px', border:'1px dashed rgba(200,210,240,0.7)', borderRadius:12 }}>
+            <div style={{ fontSize:12, color:'#9ca3af', textAlign:'center', padding:'18px 8px', border:'1px dashed rgba(200,210,240,0.7)', borderRadius:12, width:'100%' }}>
               ทุกงานถูกจัดเวลาแล้ว 🎉
             </div>
           )}
@@ -480,6 +485,7 @@ function UnscheduledPanel({ tasks, panelRef }) {
                   cursor:'grab', background:'rgba(255,255,255,0.9)', borderLeft:`3px solid ${cat.color}`,
                   border:'1px solid rgba(200,210,240,0.55)', borderLeftWidth:3, borderRadius:10,
                   padding:'8px 10px', boxShadow:'0 1px 4px rgba(100,110,200,0.06)',
+                  ...(isMobile ? { minWidth:180, flexShrink:0 } : {}),
                 }}
               >
                 <div style={{ fontSize:12.5, fontWeight:600, color:'#1a1a2e', lineHeight:1.3, marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{safe(t.title,'งาน')}</div>
@@ -491,7 +497,9 @@ function UnscheduledPanel({ tasks, panelRef }) {
             )
           })}
         </div>
-        <div style={{ fontSize:11, color:'#9ca3af', marginTop:10, lineHeight:1.5 }}>💡 ลากการ์ดไปวางบนตารางเวลาเพื่อจัดเวลา</div>
+        <div style={{ fontSize:11, color:'#9ca3af', marginTop:10, lineHeight:1.5 }}>
+          💡 {isMobile ? 'แตะค้างที่การ์ดแล้วลากลงบนตารางเวลา' : 'ลากการ์ดไปวางบนตารางเวลาเพื่อจัดเวลา'}
+        </div>
       </div>
     </div>
   )
@@ -519,11 +527,23 @@ function CategoryLegend({ logs }) {
 // MAIN CALENDAR PAGE
 // ─────────────────────────────────────────
 export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, onReschedule }) {
+  const initialMobile = typeof window !== 'undefined' && window.innerWidth <= 820
   const [detailEvent, setDetailEvent] = useState(null)
   const [quickAddDate, setQuickAddDate] = useState(null)
-  const [view, setView] = useState('timeGridWeek')
+  const [view, setView] = useState(initialMobile ? 'timeGridDay' : 'timeGridWeek')
+  const [isMobile, setIsMobile] = useState(initialMobile)
   const calendarRef = useRef()
   const panelRef = useRef()
+
+  // Track viewport so the panel + calendar can stack on small screens.
+  // Initial value comes from initialMobile (render-time); the listener only
+  // reacts to later resizes (no synchronous setState in the effect).
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)')
+    const onChange = e => setIsMobile(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const reschedule = onReschedule || (() => {})
   const showPanel = view !== 'dayGridMonth'
@@ -669,13 +689,13 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       <CategoryLegend logs={logs || []} />
 
       {/* Unscheduled panel (week/day) + Calendar */}
-      <div style={{ display:'flex', gap:16, alignItems:'flex-start' }}>
-        {showPanel && <UnscheduledPanel tasks={unscheduledTasks} panelRef={panelRef} />}
-        <div style={{ flex:1, minWidth:0, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding:22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
+      <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:16, alignItems:'stretch' }}>
+        {showPanel && <UnscheduledPanel tasks={unscheduledTasks} panelRef={panelRef} isMobile={isMobile} />}
+        <div style={{ flex:1, minWidth:0, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding: isMobile ? 12 : 22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView="timeGridWeek"
+            initialView={initialMobile ? 'timeGridDay' : 'timeGridWeek'}
             locale="th"
             headerToolbar={{ left:'prev,next today', center:'title', right:'' }}
             events={events}
@@ -697,7 +717,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
             expandRows={true}
             dayMaxEvents={3}
             height="auto"
-            aspectRatio={1.5}
+            aspectRatio={isMobile ? 0.8 : 1.5}
             firstDay={1}
             buttonText={{ today:'วันนี้', month:'เดือน', week:'สัปดาห์', day:'วัน' }}
             moreLinkContent={args => '+'+args.num+' งาน'}

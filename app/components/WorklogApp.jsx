@@ -2384,6 +2384,9 @@ export default function App(){
         {isMobile && <MobileNav
           currentPage={page}
           onNavigate={goPage}
+          navItems={mainNav}
+          user={user}
+          onLogout={doLogout}
           onAction={(action)=>{
             if(action==='report') setShowReport(true)
             else if(action==='export-pdf') goPage('export')

@@ -2024,7 +2024,7 @@ export default function App(){
       const{data,error}=await (lineId ? q.eq('line_user_id',lineId) : q.eq('user_id',uid))
       // Logged-in user with no logs → empty state (NOT the demo SAMPLE).
       if(error||!data?.length){setLogs([]);return}
-      setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[]})))
+      setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[],startAt:d.start_at||null,endAt:d.end_at||null,dueDate:d.due_date||null,priority:d.priority||'medium'})))
     }
     load()
   },[])
@@ -2078,6 +2078,10 @@ export default function App(){
     tags:        form.tags || [],
     date:        form.date,
     image_urls:  finalImageUrls,
+    start_at:    form.startAt ?? null,
+    end_at:      form.endAt ?? null,
+    due_date:    form.dueDate ?? null,
+    priority:    form.priority ?? 'medium',
   }
 
   if (editLog) {
@@ -2204,6 +2208,23 @@ export default function App(){
         await supabase.from('work_logs').delete().eq('id', id)
         setLogs(ls => ls.filter(l => l.id !== id))
         showT('ลบงานแล้ว')
+      }}
+      onReschedule={async (id, patch) => {
+        // In-place save for drag/drop/resize — no navigation, no page refresh.
+        const dbPatch = {}
+        if ('startAt' in patch) dbPatch.start_at = patch.startAt
+        if ('endAt' in patch)   dbPatch.end_at   = patch.endAt
+        // Keep the work date in sync with the scheduled day (or an explicit move).
+        if (patch.startAt)   dbPatch.date = String(patch.startAt).split('T')[0]
+        else if (patch.date) dbPatch.date = String(patch.date).split('T')[0]
+        setLogs(ls => ls.map(l => l.id === id ? {
+          ...l,
+          ...( 'startAt' in patch ? { startAt: patch.startAt } : {} ),
+          ...( 'endAt'   in patch ? { endAt:   patch.endAt   } : {} ),
+          ...( dbPatch.date ? { date: dbPatch.date } : {} ),
+        } : l))
+        const { error } = await supabase.from('work_logs').update(dbPatch).eq('id', id)
+        if (error) showT('⚠️ บันทึกเวลาไม่สำเร็จ')
       }}
     />
   )

@@ -2226,6 +2226,15 @@ export default function App(){
         const { error } = await supabase.from('work_logs').update(dbPatch).eq('id', id)
         if (error) showT('⚠️ บันทึกเวลาไม่สำเร็จ')
       }}
+      onPatch={async (id, patch) => {
+        // In-place field edits from the task sidebar (status/priority/deadline).
+        const map = { status:'status', priority:'priority', dueDate:'due_date' }
+        const dbPatch = {}
+        for (const k in patch) if (map[k]) dbPatch[map[k]] = patch[k]
+        setLogs(ls => ls.map(l => l.id === id ? { ...l, ...patch } : l))
+        const { error } = await supabase.from('work_logs').update(dbPatch).eq('id', id)
+        if (error) showT('⚠️ บันทึกไม่สำเร็จ')
+      }}
     />
   )
       case "reports":     return <ReportsPage logs={logs} onReport={()=>setShowReport(true)} onNavigate={goPage}/>

@@ -1,5 +1,6 @@
-// app/api/line/webhook/route.js — WorkLog AI LINE Bot v3
+// app/api/line/webhook/route.js — WorkLog AI LINE Bot v3.1
 // Premium Flex Cards + Quick Reply + Postback Actions
+// AI Command Center · PDF→Task · AI Inbox (vision) · report delivery
 
 import { NextResponse, after } from 'next/server'
 import crypto from 'crypto'

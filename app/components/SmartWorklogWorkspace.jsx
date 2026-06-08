@@ -610,11 +610,16 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
     if (!(form.title || '').trim()) return
     setSaving(true)
     try { localStorage.removeItem('worklog_draft') } catch {}
-    await onSave(form)
-    // Single notification, only after a successful save. Completed tasks get
-    // the "completed" trigger; everything else is a normal save.
-    sendLineNotify(form, form.status === 'done' ? 'completed' : 'save')
-    setSaving(false)
+    try {
+      await onSave(form)
+      // Notify LINE only after a successful save (skipped if onSave throws),
+      // so we never get the "LINE notified but no task" mismatch.
+      sendLineNotify(form, form.status === 'done' ? 'completed' : 'save')
+    } catch {
+      // onSave already surfaced an error toast; just stop here.
+    } finally {
+      setSaving(false)
+    }
   }
 
   const cat = getCat(form.category)

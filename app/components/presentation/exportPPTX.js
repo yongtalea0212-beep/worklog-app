@@ -14,7 +14,7 @@ export async function exportToPPTX(slides, theme, meta = {}) {
   pptx.defineLayout({ name: 'WIDE', width: 13.333, height: 7.5 })
   pptx.layout = 'WIDE'
   pptx.title = meta.title || 'Monthly Work Report'
-  pptx.author = meta.brand || 'WorkLog AI'
+  pptx.author = meta.brand || 'StayScape'
   pptx.subject = meta.periodLabel || ''
 
   const W = 13.333

@@ -280,7 +280,7 @@ export default function LINEIntegrationPage({ logs = [] }) {
               <div style={{ width:38, height:38, borderRadius:12, background:'linear-gradient(135deg,#00B900,#00D900)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, boxShadow:'0 4px 14px rgba(0,185,0,0.35)' }}>💬</div>
               <div>
                 <div style={{ fontSize:20, fontWeight:700, color:'#1a1a2e' }}>LINE Integration Center</div>
-                <div style={{ fontSize:12, color:'#9ca3af', marginTop:1 }}>เชื่อม LINE OA กับ WorkLog AI — บันทึกงานผ่าน LINE ได้เลย</div>
+                <div style={{ fontSize:12, color:'#9ca3af', marginTop:1 }}>เชื่อม LINE OA กับ StayScape — บันทึกงานผ่าน LINE ได้เลย</div>
               </div>
             </div>
           </div>
@@ -338,7 +338,7 @@ export default function LINEIntegrationPage({ logs = [] }) {
                 {[
                   { n:1, t:'ส่งข้อความใน LINE', d:'บอก AI ว่าทำงานอะไรวันนี้', c:'#6C63FF' },
                   { n:2, t:'AI วิเคราะห์อัตโนมัติ', d:'จัดหมวดหมู่ สรุป สร้าง tags', c:'#8B5CF6' },
-                  { n:3, t:'บันทึกใน WorkLog AI', d:'ขึ้น Dashboard, Calendar, Gallery', c:'#00B900' },
+                  { n:3, t:'บันทึกใน StayScape', d:'ขึ้น Dashboard, Calendar, Gallery', c:'#00B900' },
                   { n:4, t:'ดูรายงานบนเว็บ', d:'PDF, PPTX, Analytics ครบ', c:'#F59E0B' },
                 ].map((s,i) => (
                   <div key={i} style={{ display:'flex', gap:12, marginBottom:i<3?12:0, alignItems:'flex-start' }}>
@@ -391,7 +391,7 @@ export default function LINEIntegrationPage({ logs = [] }) {
                   { arrow:true },
                   { icon:'🗄️', label:'Supabase DB',     color:'#06B6D4' },
                   { arrow:true },
-                  { icon:'🖥️', label:'WorkLog AI Web',  color:'#F59E0B' },
+                  { icon:'🖥️', label:'StayScape Web',  color:'#F59E0B' },
                 ].map((item, i) => (
                   item.arrow
                     ? <div key={i} style={{ fontSize:18, color:'#9ca3af', margin:'0 4px' }}>→</div>

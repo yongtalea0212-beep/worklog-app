@@ -210,7 +210,7 @@ function weeklyCard(stats, ai) {
             contents:[{ type:'image', url:MASCOT_HAPPY, size:'38px', aspectMode:'cover' }] },
           { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📈 สรุปสัปดาห์นี้', size:'lg', weight:'bold', color:'#FFFFFF' },
-            { type:'text', text:'WorkLog AI · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },
+            { type:'text', text:'StayScape · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },
           ] },
           { type:'box', layout:'vertical', flex:0, justifyContent:'center', cornerRadius:'20px',
             paddingAll:'6px', paddingStart:'14px', paddingEnd:'14px', backgroundColor:'#FFFFFF',

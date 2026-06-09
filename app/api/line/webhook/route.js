@@ -1,4 +1,4 @@
-// app/api/line/webhook/route.js — WorkLog AI LINE Bot v3.1
+// app/api/line/webhook/route.js — StayScape LINE Bot v3.1
 // Premium Flex Cards + Quick Reply + Postback Actions
 // AI Command Center · PDF→Task · AI Inbox (vision) · report delivery
 
@@ -18,7 +18,7 @@ const MASCOT_HERO_WAVE = APP_URL + '/mascot-hero-wave.png?v=2'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// WorkLog AI Brand Colors
+// StayScape Brand Colors
 const BRAND = {
   purple:     '#6C63FF',
   purpleLight:'#9B8FFF',
@@ -221,7 +221,7 @@ async function analyze(title, desc) {
 }
 
 // ─────────────────────────────────────────
-// FLEX MESSAGE BUILDERS — WorkLog AI Style
+// FLEX MESSAGE BUILDERS — StayScape Style
 // ─────────────────────────────────────────
 
 // 1. Image received card with Quick Reply
@@ -454,7 +454,7 @@ function msgWorklogSaved(d, saved) {
           {
             type: 'button', style: 'primary', height: 'sm',
             color: BRAND.purple,
-            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
+            action: { type:'uri', label:'🌐 ดูใน StayScape', uri: APP_URL },
           },
         ]
       },
@@ -714,7 +714,7 @@ function msgStatusUpdate(log, trigger) {
     completed:     '🎉 งานเสร็จแล้ว',
   }
   const st = STATUS[log.status] || STATUS.draft
-  const triggerLabel = TRIGGERS[trigger] || '📋 WorkLog AI'
+  const triggerLabel = TRIGGERS[trigger] || '📋 StayScape'
   const dateStr = log.date
     ? new Date(log.date).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
     : new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
@@ -804,7 +804,7 @@ function msgStatusUpdate(log, trigger) {
           },
           {
             type: 'button', style: 'primary', height: 'sm', color: BRAND.purple,
-            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
+            action: { type:'uri', label:'🌐 ดูใน StayScape', uri: APP_URL },
           },
         ]
       },
@@ -898,7 +898,7 @@ function computeDashboard(monthLogs) {
 async function understand(text) {
   const today = bkkToday()
   const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { weekday:'long' })
-  const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "WorkLog AI" ตอบ JSON เท่านั้น ห้าม markdown
+  const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "StayScape" ตอบ JSON เท่านั้น ห้าม markdown
 วันนี้คือ ${today} (${dow}) เขตเวลาไทย — ใช้อ้างอิงเมื่อผู้ใช้พูดถึงวัน/เวลา เช่น "พรุ่งนี้" "บ่าย 2" "ศุกร์นี้"
 ข้อความผู้ใช้: "${text}"
 หมวดงาน: graphic|video|photo|marketing|ai|branding|pos|other
@@ -1331,14 +1331,14 @@ function msgWelcome() {
     ]
   })
   return [{
-    type:'flex', altText:'👋 ยินดีต้อนรับสู่ WorkLog AI — ผู้ช่วยจัดการงานผ่าน LINE',
+    type:'flex', altText:'👋 ยินดีต้อนรับสู่ StayScape — ผู้ช่วยจัดการงานผ่าน LINE',
     contents:{
       type:'bubble', size:'mega',
       hero:{ type:'image', url:MASCOT_HERO_WAVE, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:BRAND.purple },
       body:{
         type:'box', layout:'vertical', paddingAll:'18px', spacing:'none', backgroundColor:BRAND.cardBg,
         contents:[
-          { type:'text', text:'WorkLog AI', size:'xl', weight:'bold', color:BRAND.purple },
+          { type:'text', text:'StayScape', size:'xl', weight:'bold', color:BRAND.purple },
           { type:'text', text:'👋 สวัสดี! ผมเป็นผู้ช่วย AI จัดการงานของคุณผ่าน LINE', size:'sm', color:BRAND.textSub, margin:'sm', wrap:true },
           { type:'separator', margin:'lg', color:'#EDEAFF' },
           { type:'text', text:'ทำอะไรได้บ้าง', size:'xs', weight:'bold', color:BRAND.textMuted, margin:'lg' },
@@ -1357,7 +1357,7 @@ function msgWelcome() {
             btn('❓ วิธีใช้', { postback:'action=cmd&cmd=help' }, '#E8E0FF'),
           ]},
           { type:'button', style:'primary', height:'sm', color:BRAND.purple,
-            action:{ type:'uri', label:'🌐 เปิด WorkLog AI', uri:APP_URL } },
+            action:{ type:'uri', label:'🌐 เปิด StayScape', uri:APP_URL } },
         ]
       },
       styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
@@ -1420,7 +1420,7 @@ function msgDashboard(stats, projects) {
     ]
   })
   return [{
-    type:'flex', altText:'📊 แดชบอร์ด WorkLog AI',
+    type:'flex', altText:'📊 แดชบอร์ด StayScape',
     contents:{
       type:'bubble', size:'mega',
       header:{
@@ -1843,7 +1843,7 @@ async function handleCmd(uid, text, token) {
   if (cmd==='/help') {
     return replyLINE(token,[{
       type:'text',
-      text:'🤖 WorkLog AI — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้" · "ส่ง PDF" · "ส่ง PPT"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
+      text:'🤖 StayScape — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้" · "ส่ง PDF" · "ส่ง PPT"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
       quickReply:{
         items:[
           { type:'action', action:{ type:'message', label:'📊 แดชบอร์ด', text:'แดชบอร์ด' } },
@@ -2171,7 +2171,7 @@ export async function PUT(request) {
 
 export async function GET() {
   return NextResponse.json({
-    status:'WorkLog AI LINE Bot v3 ✅',
+    status:'StayScape LINE Bot v3 ✅',
     time:new Date().toISOString(),
     env:{
       LINE_TOKEN:LINE_TOKEN?'✅':'❌',

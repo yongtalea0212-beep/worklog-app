@@ -84,6 +84,7 @@ body {
   background: var(--bg);
   background-attachment: fixed;
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 
@@ -98,7 +99,7 @@ body::before {
   pointer-events: none; z-index: 0;
 }
 
-.app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+.app { display: flex; height: 100vh; height: 100dvh; overflow: hidden; position: relative; z-index: 1; }
 
 /* ════════════════════════════════════════
    SIDEBAR
@@ -112,9 +113,10 @@ body::before {
   border-right: 1px solid rgba(255,255,255,0.72);
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
+  position: relative;
   height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
   box-shadow: 4px 0 24px rgba(100,110,200,0.08);
 }
 
@@ -277,7 +279,7 @@ body::before {
 /* ════════════════════════════════════════
    MAIN AREA
 ════════════════════════════════════════ */
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 
 .topbar {
   padding: 16px 32px;
@@ -293,7 +295,7 @@ body::before {
   box-shadow: 0 2px 16px rgba(100,110,200,0.08);
 }
 
-.content { padding: 28px 32px; overflow-y: auto; flex: 1; }
+.content { padding: 28px 32px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
 
 /* ════════════════════════════════════════
    BUTTONS
@@ -733,8 +735,8 @@ body::before {
 ════════════════════════════════════════ */
 @media (max-width: 768px) {
   .sb { display: none; }
-  .app { display: block; }
-  .main { min-height: 100vh; }
+  .app { display: block; height: auto; overflow: visible; }
+  .main { height: auto; min-height: 100dvh; overflow: visible; }
 
   /* Topbar */
   .topbar { padding: 11px 14px; }
@@ -742,7 +744,7 @@ body::before {
   .topbar .btn-primary.btn-sm { font-size: 12px; padding: 7px 12px; }
 
   /* Content */
-  .content { padding: 14px 12px 92px; }
+  .content { padding: 14px 12px 92px; overflow: visible; }
 
   /* Hero */
   .hero { padding: 18px 16px; }

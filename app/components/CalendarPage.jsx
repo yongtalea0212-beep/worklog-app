@@ -297,8 +297,8 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
     border:'1px solid rgba(255,255,255,0.99)', overflowY:'auto', fontFamily:'inherit',
     boxShadow:'-12px 0 48px rgba(60,70,130,0.18)',
     ...(isMobile
-      ? { width:'100%', maxHeight:'92vh', borderRadius:'24px 24px 0 0', animation:'ts-sheet .26s cubic-bezier(.2,.8,.2,1)' }
-      : { width:'min(460px,100%)', height:'100vh', borderRadius:'24px 0 0 24px', animation:'ts-drawer .26s cubic-bezier(.2,.8,.2,1)' }),
+      ? { width:'100%', maxHeight:'92dvh', borderRadius:'24px 24px 0 0', animation:'ts-sheet .26s cubic-bezier(.2,.8,.2,1)' }
+      : { width:'min(460px,100%)', height:'100dvh', borderRadius:'24px 0 0 24px', animation:'ts-drawer .26s cubic-bezier(.2,.8,.2,1)' }),
   }
 
   const segBtn = (active, color) => ({

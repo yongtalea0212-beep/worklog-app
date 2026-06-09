@@ -25,7 +25,7 @@ export async function exportToExcel({ logs, stats, meta }) {
   const mod = await import('exceljs')
   const ExcelJS = (mod.default && mod.default.Workbook) ? mod.default : mod
   const wb = new ExcelJS.Workbook()
-  wb.creator = meta?.brand || 'WorkLog AI'
+  wb.creator = meta?.brand || 'StayScape'
   wb.created = new Date()
 
   const periodLabel = meta?.periodLabel || ''
@@ -66,7 +66,7 @@ export async function exportToExcel({ logs, stats, meta }) {
   summary.columns = [{ width: 28 }, { width: 24 }, { width: 16 }]
   styleTitle(summary, 'A1', `Monthly Work Report — ${periodLabel}`)
   summary.mergeCells('A1:C1')
-  summary.getCell('A2').value = meta?.brand || 'WorkLog AI'
+  summary.getCell('A2').value = meta?.brand || 'StayScape'
   summary.getCell('A2').font = { italic: true, color: { argb: 'FF64748B' } }
 
   summary.addRow([]) // row 3 spacer

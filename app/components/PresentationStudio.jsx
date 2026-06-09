@@ -569,7 +569,7 @@ export default function PresentationStudio({ logs = [], brand = 'StayScape' }) {
 // STYLES — responsive 320px → 1920px, dark-mode aware
 // ─────────────────────────────────────────────────────────────
 const CSS = `
-.psx{--psx-accent:#6C63FF;--psx-fg:#1a1a2e;--psx-muted:#9ca3af;--psx-surface:rgba(255,255,255,.72);--psx-surface2:rgba(255,255,255,.55);--psx-border:rgba(200,210,240,.5);--psx-bg2:rgba(230,233,255,.4);font-family:Inter,'IBM Plex Sans Thai',system-ui,sans-serif;color:var(--psx-fg);}
+.psx{--psx-accent:#6C63FF;--psx-fg:#1a1a2e;--psx-muted:#9ca3af;--psx-surface:rgba(255,255,255,.72);--psx-surface2:rgba(255,255,255,.55);--psx-border:rgba(200,210,240,.5);--psx-bg2:rgba(230,233,255,.4);font-family:Inter,'IBM Plex Sans Thai',system-ui,sans-serif;color:var(--psx-fg);height:100%;}
 @media (prefers-color-scheme: dark){
   .psx{--psx-fg:#e2e8f0;--psx-muted:#64748b;--psx-surface:rgba(30,41,59,.7);--psx-surface2:rgba(30,41,59,.5);--psx-border:rgba(100,116,139,.35);--psx-bg2:rgba(15,23,42,.5);}
 }
@@ -659,7 +659,7 @@ const CSS = `
 }
 /* Desktop 3-column */
 @media (min-width:1280px){
-  .psx-workspace{grid-template-columns:240px minmax(0,1fr) 320px;max-width:none;margin:0;align-items:start;height:calc(100vh - 60px);overflow:hidden}
+  .psx-workspace{grid-template-columns:240px minmax(0,1fr) 320px;max-width:none;margin:0;align-items:start;height:100%;overflow:hidden}
   .psx-col-slides{order:1;overflow-y:auto;height:100%;padding-right:4px}
   .psx-col-preview{order:2;overflow-y:auto;height:100%}
   .psx-col-settings{order:3;overflow-y:auto;height:100%}

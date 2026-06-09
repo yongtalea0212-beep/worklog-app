@@ -53,7 +53,7 @@ function extractJSON(text, open, close) {
   return JSON.parse(clean.slice(si, ei + 1))
 }
 
-export async function generateSlides({ logs, year, month, customPrompt, lang = 'th', brand = 'WorkLog AI' }) {
+export async function generateSlides({ logs, year, month, customPrompt, lang = 'th', brand = 'StayScape' }) {
   const stats = computeStats(logs)
   const prompt = [
     `Create a professional executive monthly work report presentation in ${lang === 'th' ? 'Thai' : 'English'} language.`,
@@ -113,7 +113,7 @@ export async function regenerateSlide({ slide, index, logs, year, month, customP
 }
 
 // ── Fully data-driven fallback (no mock data — computed from real tasks) ──
-export function fallbackSlides(logs, year, month, lang = 'th', brand = 'WorkLog AI') {
+export function fallbackSlides(logs, year, month, lang = 'th', brand = 'StayScape') {
   const th = lang === 'th'
   const stats = computeStats(logs)
   const label = periodLabel(year, month, lang)

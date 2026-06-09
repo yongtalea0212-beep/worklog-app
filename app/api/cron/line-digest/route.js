@@ -10,8 +10,10 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const APP_URL      = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-virid.vercel.app'
-const MASCOT_FACE  = APP_URL + '/mascot-face.png?v=1'
-const MASCOT_HERO  = APP_URL + '/mascot-hero.png?v=1'
+const MASCOT_FACE  = APP_URL + '/mascot-face.png?v=2'
+const MASCOT_HAPPY = APP_URL + '/mascot-happy.png?v=2'
+const MASCOT_ALERT = APP_URL + '/mascot-alert.png?v=2'
+const MASCOT_HERO  = APP_URL + '/mascot-hero.png?v=2'
 const CRON_SECRET  = process.env.CRON_SECRET || ''
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -96,11 +98,14 @@ function confirmBubble(t, today) {
     : (t.due_date ? (overdue ? '⚠️ เลยกำหนดส่ง' : '📅 ครบกำหนดวันนี้') : '')
   return {
     type:'bubble', size:'kilo',
-    header:{ type:'box', layout:'vertical', paddingAll:'14px', backgroundColor: overdue ? '#FFF0F0' : '#F0EEFF',
+    header:{ type:'box', layout:'horizontal', paddingAll:'14px', spacing:'sm', backgroundColor: overdue ? '#FFF0F0' : '#F0EEFF',
       contents:[
-        { type:'text', text: overdue ? '⚠️ งานเลยกำหนด' : '⏰ ถึงเวลาเสร็จแล้ว', size:'xs', weight:'bold', color: overdue ? '#EF4444' : '#6C63FF' },
-        { type:'text', text:`${CAT[t.category] || '📌'} ${t.title || 'งาน'}`, weight:'bold', size:'sm', color:'#1a1a2e', wrap:true, margin:'sm' },
-        ...(sub ? [{ type:'text', text:sub, size:'xxs', color:'#9ca3af', margin:'xs' }] : []),
+        { type:'image', url: overdue ? MASCOT_ALERT : MASCOT_FACE, size:'40px', aspectMode:'cover', flex:0, gravity:'top' },
+        { type:'box', layout:'vertical', flex:1, contents:[
+          { type:'text', text: overdue ? '⚠️ งานเลยกำหนด' : '⏰ ถึงเวลาเสร็จแล้ว', size:'xs', weight:'bold', color: overdue ? '#EF4444' : '#6C63FF' },
+          { type:'text', text:`${CAT[t.category] || '📌'} ${t.title || 'งาน'}`, weight:'bold', size:'sm', color:'#1a1a2e', wrap:true, margin:'sm' },
+          ...(sub ? [{ type:'text', text:sub, size:'xxs', color:'#9ca3af', margin:'xs' }] : []),
+        ] },
       ] },
     footer:{ type:'box', layout:'vertical', paddingAll:'10px', spacing:'sm', backgroundColor:'#FAFBFF',
       contents:[
@@ -202,7 +207,7 @@ function weeklyCard(stats, ai) {
         contents:[
           { type:'box', layout:'vertical', flex:0, width:'50px', height:'50px', cornerRadius:'25px',
             backgroundColor:'#FFFFFF', justifyContent:'center', alignItems:'center',
-            contents:[{ type:'image', url:MASCOT_FACE, size:'38px', aspectMode:'cover' }] },
+            contents:[{ type:'image', url:MASCOT_HAPPY, size:'38px', aspectMode:'cover' }] },
           { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📈 สรุปสัปดาห์นี้', size:'lg', weight:'bold', color:'#FFFFFF' },
             { type:'text', text:'WorkLog AI · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },

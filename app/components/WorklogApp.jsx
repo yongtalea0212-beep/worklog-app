@@ -1569,6 +1569,11 @@ function LogCard({log, onEdit, onDelete, onStatusChange}){
             <span style={{fontWeight:600,fontSize:14,color:"var(--text)"}}>{log.title}</span>
             <Badge category={log.category}/>
             <StatusBadge status={log.status}/>
+            {log.dueDate && log.status!=='done' && (()=>{
+              const days=Math.round((new Date(log.dueDate).setHours(0,0,0,0)-new Date().setHours(0,0,0,0))/86400000)
+              const c=days<0?{c:'#991B1B',t:`เลย ${-days} ว.`}:days===0?{c:'#8B5CF6',t:'วันนี้'}:days<3?{c:'#EF4444',t:`อีก ${days} ว.`}:days<=7?{c:'#F59E0B',t:`อีก ${days} ว.`}:{c:'#10B981',t:`อีก ${days} ว.`}
+              return <span style={{fontSize:10,fontWeight:700,color:c.c,background:c.c+'1A',borderRadius:20,padding:'2px 8px'}}>⏰ {c.t}</span>
+            })()}
           </div>
 
           {/* Summary */}

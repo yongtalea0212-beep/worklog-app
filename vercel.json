@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/line-digest?type=plan", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/line-digest?type=pending", "schedule": "0 11 * * *" }
+  ]
+}

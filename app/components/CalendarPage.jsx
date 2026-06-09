@@ -4,6 +4,7 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
+import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell } from 'recharts'
 
 // ─────────────────────────────────────────
 // CONSTANTS
@@ -529,6 +530,110 @@ function CalendarStats({ logs }) {
 }
 
 // ─────────────────────────────────────────
+// RESOURCE + ANALYTICS (§8, §14) — this-week utilization & insights
+// ─────────────────────────────────────────
+function startOfWeek(d) {
+  const x = new Date(d); const day = (x.getDay() + 6) % 7 // Monday = 0
+  x.setHours(0,0,0,0); x.setDate(x.getDate() - day); return x
+}
+function CalendarAnalytics({ logs }) {
+  const all = logs || []
+  const wkStart = startOfWeek(new Date())
+  const wkEnd = new Date(wkStart); wkEnd.setDate(wkEnd.getDate() + 7)
+  const inWeek = l => { const d = new Date(l.date); return d >= wkStart && d < wkEnd }
+  const week = all.filter(inWeek)
+
+  const plannedH   = round1(week.reduce((s,l) => s + hrsOf(l), 0))
+  const completedH = round1(week.filter(l => l.status === 'done').reduce((s,l) => s + hrsOf(l), 0))
+  const remainingH = round1(Math.max(0, plannedH - completedH))
+  const util       = plannedH ? Math.round(completedH / plannedH * 100) : 0
+
+  // per-day hours (Mon–Sun)
+  const DOW = ['จ','อ','พ','พฤ','ศ','ส','อา']
+  const days = DOW.map((label,i) => {
+    const d = new Date(wkStart); d.setDate(d.getDate() + i)
+    const key = d.toISOString().split('T')[0]
+    const hours = round1(week.filter(l => l.date === key).reduce((s,l) => s + hrsOf(l), 0))
+    return { label, hours }
+  })
+  const maxDay = days.reduce((m,d) => d.hours > m.hours ? d : m, days[0])
+
+  // insights
+  const catCount = {}
+  for (const l of all) catCount[l.category] = (catCount[l.category] || 0) + 1
+  const topCatId = Object.entries(catCount).sort((a,b) => b[1]-a[1])[0]?.[0]
+  const topCat = topCatId ? getCat(topCatId) : null
+  const workDays = days.filter(d => d.hours > 0).length
+  const avgDaily = workDays ? round1(plannedH / workDays) : 0
+  const total = week.length, doneN = week.filter(l => l.status === 'done').length
+  const completionRate = total ? Math.round(doneN / total * 100) : 0
+  const today = new Date().toISOString().split('T')[0]
+  const overdue = all.filter(l => l.status !== 'done' && l.dueDate && l.dueDate < today).length
+
+  const insights = [
+    { label:'หมวดเด่น',        value: topCat ? `${topCat.icon} ${topCat.label}` : '—', color: topCat?.color || '#9ca3af' },
+    { label:'เฉลี่ย/วัน',      value: `${avgDaily} ชม.`,         color:'#06B6D4' },
+    { label:'วันที่ทำงานสูงสุด', value: maxDay.hours ? `${maxDay.label} (${maxDay.hours}ชม.)` : '—', color:'#6C63FF' },
+    { label:'อัตราเสร็จ',      value: `${completionRate}%`,      color:'#10B981' },
+    { label:'งานเลยกำหนด',     value: `${overdue}`,              color: overdue ? '#EF4444' : '#9ca3af' },
+  ]
+
+  return (
+    <div style={{ marginTop:18, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:20, padding:18, boxShadow:'0 8px 32px rgba(100,110,200,0.08)' }}>
+      <div style={{ fontSize:14, fontWeight:700, color:'#1a1a2e', marginBottom:14 }}>📊 ภาพรวมสัปดาห์นี้</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:16 }}>
+
+        {/* Resource utilization (§8) */}
+        <div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+            {[
+              { label:'ชม.ที่วางแผน', value:plannedH,   color:'#6C63FF' },
+              { label:'ทำเสร็จแล้ว',  value:completedH, color:'#10B981' },
+              { label:'คงเหลือ',     value:remainingH, color:'#F59E0B' },
+              { label:'Utilization', value:util+'%',   color:'#06B6D4' },
+            ].map((s,i) => (
+              <div key={i} style={{ background:'rgba(255,255,255,0.7)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:11, padding:'9px 11px' }}>
+                <div style={{ fontSize:17, fontWeight:700, color:s.color, lineHeight:1 }}>{s.value}</div>
+                <div style={{ fontSize:10, color:'#9ca3af', marginTop:3 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ height:8, background:'#EEF0FA', borderRadius:4, overflow:'hidden' }}>
+            <div style={{ height:8, width:`${Math.min(100,util)}%`, background:'linear-gradient(90deg,#6C63FF,#9B8FFF)', borderRadius:4 }} />
+          </div>
+        </div>
+
+        {/* Daily hours chart (§14) */}
+        <div>
+          <div style={{ fontSize:11, color:'#9ca3af', fontWeight:600, marginBottom:6 }}>ชั่วโมงต่อวัน</div>
+          <div style={{ height:120 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={days} margin={{ top:4, right:4, bottom:0, left:-26 }}>
+                <XAxis dataKey="label" tick={{ fontSize:11, fill:'#9ca3af' }} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill:'rgba(108,99,255,0.06)' }} formatter={v => [`${v} ชม.`, 'รวม']} labelStyle={{ fontSize:12 }} contentStyle={{ borderRadius:10, fontSize:12, border:'1px solid #E8E0FF' }} />
+                <Bar dataKey="hours" radius={[5,5,0,0]}>
+                  {days.map((d,i) => <Cell key={i} fill={d.label===maxDay.label && d.hours>0 ? '#6C63FF' : '#C7C3F5'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Insights (§14) */}
+        <div style={{ display:'flex', flexDirection:'column', gap:7, justifyContent:'center' }}>
+          {insights.map((s,i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', fontSize:12.5 }}>
+              <span style={{ color:'#9ca3af' }}>{s.label}</span>
+              <span style={{ fontWeight:700, color:s.color }}>{s.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────
 // UNSCHEDULED TASKS PANEL (§1) — drag onto the timeline
 // ─────────────────────────────────────────
 function UnscheduledPanel({ tasks, panelRef, isMobile }) {
@@ -682,6 +787,24 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
   }, [])
 
   const [planPreview, setPlanPreview] = useState(null)
+  const touch = useRef({ x:0, y:0, skip:false })
+
+  // §15 mobile swipe → prev/next period (ignores swipes that start on a
+  // draggable event/card so it doesn't fight drag-to-reschedule).
+  function onTouchStart(e) {
+    if (!isMobile) return
+    const t = e.touches[0]
+    touch.current = { x:t.clientX, y:t.clientY, skip: !!(e.target.closest && e.target.closest('.fc-event, .unsched-item')) }
+  }
+  function onTouchEnd(e) {
+    if (!isMobile || touch.current.skip) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - touch.current.x, dy = t.clientY - touch.current.y
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const api = calendarRef.current?.getApi()
+      if (dx < 0) api?.next(); else api?.prev()
+    }
+  }
 
   const reschedule = onReschedule || (() => {})
   const showPanel = view !== 'dayGridMonth'
@@ -876,7 +999,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       {/* Unscheduled panel (week/day) + Calendar */}
       <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:16, alignItems:'stretch' }}>
         {showPanel && <UnscheduledPanel tasks={unscheduledTasks} panelRef={panelRef} isMobile={isMobile} />}
-        <div style={{ flex:1, minWidth:0, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding: isMobile ? 12 : 22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
+        <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ flex:1, minWidth:0, background:'rgba(255,255,255,0.58)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.92)', borderRadius:24, padding: isMobile ? 12 : 22, boxShadow:'0 8px 32px rgba(100,110,200,0.1)' }}>
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -918,6 +1041,9 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
         <span>·</span>
         <span>กดที่งานเพื่อดูรายละเอียด</span>
       </div>
+
+      {/* Resource utilization + analytics (§8, §14) */}
+      <CalendarAnalytics logs={logs || []} />
 
       {/* Task detail sidebar */}
       {detailEvent && (

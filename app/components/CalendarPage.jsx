@@ -62,6 +62,56 @@ const deadlineClass = dueDate => {
 }
 
 // ─────────────────────────────────────────
+// AI PLAN MY DAY (§6) — order by urgency, pack into free slots
+// ─────────────────────────────────────────
+const pad2 = n => String(n).padStart(2, '0')
+const fmtHM = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+const sameLocalDay = (a, b) => {
+  const x = new Date(a), y = new Date(b)
+  return x.getFullYear()===y.getFullYear() && x.getMonth()===y.getMonth() && x.getDate()===y.getDate()
+}
+
+// Deterministic priority order: overdue/nearest deadline → priority → longer first
+function planOrder(tasks) {
+  const rank = { high:0, medium:1, low:2 }
+  return [...tasks].sort((a,b) => {
+    const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
+    const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
+    if (da !== db) return da - db
+    const ra = rank[a.priority] ?? 1, rb = rank[b.priority] ?? 1
+    if (ra !== rb) return ra - rb
+    return hrsOf(b) - hrsOf(a)
+  })
+}
+
+// First-fit pack into the day's free gaps (avoids existing scheduled blocks)
+function packDay(ordered, dayDate, busy, startHour = 9, endHour = 18) {
+  const dayStart = new Date(dayDate); dayStart.setHours(startHour,0,0,0)
+  const dayEnd   = new Date(dayDate); dayEnd.setHours(endHour,0,0,0)
+  const ivs = busy
+    .map(b => ({ s: Math.max(new Date(b.s).getTime(), dayStart.getTime()), e: Math.min(new Date(b.e).getTime(), dayEnd.getTime()) }))
+    .filter(b => b.e > b.s).sort((a,b) => a.s - b.s)
+  let cursor = dayStart.getTime()
+  const gaps = []
+  for (const iv of ivs) { if (iv.s > cursor) gaps.push({ s: cursor, e: iv.s }); cursor = Math.max(cursor, iv.e) }
+  if (cursor < dayEnd.getTime()) gaps.push({ s: cursor, e: dayEnd.getTime() })
+
+  const placed = [], unplaced = []
+  for (const t of ordered) {
+    const durMs = Math.max(0.5, hrsOf(t) || 1) * 3600000
+    let ok = false
+    for (const g of gaps) {
+      if (g.e - g.s >= durMs) {
+        placed.push({ id:t.id, title:t.title, category:t.category, startAt:new Date(g.s).toISOString(), endAt:new Date(g.s+durMs).toISOString() })
+        g.s += durMs; ok = true; break
+      }
+    }
+    if (!ok) unplaced.push(t)
+  }
+  return { placed, unplaced }
+}
+
+// ─────────────────────────────────────────
 // CSS
 // ─────────────────────────────────────────
 const CAL_CSS = `
@@ -555,6 +605,61 @@ function CategoryLegend({ logs }) {
 }
 
 // ─────────────────────────────────────────
+// AI PLAN PREVIEW MODAL (§6)
+// ─────────────────────────────────────────
+function PlanPreviewModal({ plan, onAccept, onClose, isMobile }) {
+  if (!plan) return null
+  const { loading, none, date, placed = [], unplaced = [], strategy } = plan
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(40,50,90,0.28)', backdropFilter:'blur(8px)', WebkitBackdropFilter:'blur(8px)', zIndex:220, display:'flex', alignItems:isMobile?'flex-end':'center', justifyContent:'center', padding:isMobile?0:20, animation:'ts-fade .18s ease' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:'rgba(255,255,255,0.97)', backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)', border:'1px solid rgba(255,255,255,0.99)', width: isMobile?'100%':'min(480px,100%)', maxHeight:'88vh', overflowY:'auto', borderRadius: isMobile?'24px 24px 0 0':24, boxShadow:'0 24px 64px rgba(60,70,130,0.22)', padding:22, animation:(isMobile?'ts-sheet':'cal-slide')+' .24s ease' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+          <div style={{ fontSize:16, fontWeight:700, color:'#1a1a2e' }}>🤖 AI จัดตารางให้</div>
+          <button onClick={onClose} style={{ width:30, height:30, borderRadius:9, background:'rgba(0,0,0,0.04)', border:'none', fontSize:18, cursor:'pointer', color:'#6b7099' }}>×</button>
+        </div>
+        {date && <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:14 }}>{fmtDate(date)} · เวลาทำงาน 09:00–18:00</div>}
+
+        {loading && <div style={{ padding:'30px 0', textAlign:'center', color:'#6C63FF', fontSize:14 }}>⏳ กำลังวิเคราะห์และจัดตาราง...</div>}
+
+        {none && <div style={{ padding:'24px 0', textAlign:'center', color:'#9ca3af', fontSize:14 }}>ไม่มีงานที่ยังไม่จัดเวลาสำหรับวันนี้ 🎉</div>}
+
+        {!loading && !none && (
+          <>
+            {strategy && (
+              <div style={{ background:'linear-gradient(135deg,rgba(108,99,255,0.08),rgba(167,139,250,0.05))', border:'1px solid rgba(108,99,255,0.16)', borderRadius:12, padding:'10px 13px', marginBottom:14, fontSize:12.5, color:'#4a5568', lineHeight:1.6 }}>
+                ✨ {strategy}
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:14 }}>
+              {placed.map((p,i) => {
+                const cat = getCat(p.category || 'other')
+                return (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:10, background:'rgba(255,255,255,0.8)', borderLeft:`3px solid ${cat.color}`, border:'1px solid rgba(200,210,240,0.5)', borderLeftWidth:3, borderRadius:10, padding:'9px 11px' }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:cat.color, minWidth:96 }}>{fmtHM(new Date(p.startAt))}–{fmtHM(new Date(p.endAt))}</div>
+                    <div style={{ fontSize:13, color:'#1a1a2e', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cat.icon} {p.title}</div>
+                  </div>
+                )
+              })}
+              {placed.length === 0 && <div style={{ fontSize:13, color:'#9ca3af', textAlign:'center', padding:'12px 0' }}>ไม่มีช่องเวลาว่างพอในวันนี้</div>}
+            </div>
+            {unplaced.length > 0 && (
+              <div style={{ fontSize:12, color:'#F59E0B', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:10, padding:'8px 11px', marginBottom:14 }}>
+                ⚠️ จัดไม่ลง {unplaced.length} งาน (เวลาไม่พอ) — ยังอยู่ในรายการที่ยังไม่จัดเวลา
+              </div>
+            )}
+            <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={onClose} style={{ padding:'9px 18px', background:'rgba(255,255,255,0.65)', border:'1px solid rgba(200,210,240,0.5)', borderRadius:11, fontSize:13, color:'#6b7099', cursor:'pointer', fontFamily:'inherit' }}>ยกเลิก</button>
+              <button onClick={onAccept} disabled={!placed.length} style={{ padding:'9px 22px', background: placed.length?'linear-gradient(135deg,#6C63FF,#9B8FFF)':'rgba(200,210,240,0.5)', border:'none', borderRadius:11, fontSize:13, fontWeight:700, color: placed.length?'white':'#9ca3af', cursor: placed.length?'pointer':'default', fontFamily:'inherit', boxShadow: placed.length?'0 4px 12px rgba(108,99,255,0.32)':'none' }}>✓ ใช้ตารางนี้</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────
 // MAIN CALENDAR PAGE
 // ─────────────────────────────────────────
 export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, onReschedule, onPatch }) {
@@ -576,8 +681,53 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
+  const [planPreview, setPlanPreview] = useState(null)
+
   const reschedule = onReschedule || (() => {})
   const showPanel = view !== 'dayGridMonth'
+
+  // §6 AI Plan My Day — order unscheduled tasks (AI + heuristics) and pack
+  // them into the viewed day's free slots; preview before applying.
+  async function aiPlanDay() {
+    const api = calendarRef.current?.getApi()
+    const target = api ? api.getDate() : new Date()
+    const todo = (logs || []).filter(l => !l.startAt && l.status !== 'done')
+    if (!todo.length) { setPlanPreview({ none: true }); return }
+    setPlanPreview({ loading: true })
+
+    const dayStr = `${target.getFullYear()}-${pad2(target.getMonth()+1)}-${pad2(target.getDate())}`
+    const busy = (logs || [])
+      .filter(l => l.startAt && sameLocalDay(l.startAt, target))
+      .map(l => ({ s: l.startAt, e: l.endAt || new Date(new Date(l.startAt).getTime() + (hrsOf(l)||1)*3600000).toISOString() }))
+
+    // Order via AI (smart prioritization); fall back to heuristic order.
+    let ordered = planOrder(todo)
+    let strategy = 'เรียงตามกำหนดส่งและความสำคัญ แล้วจัดลงช่องเวลาว่าง'
+    try {
+      const prompt = `จัดลำดับความสำคัญของงานสำหรับวันที่ ${dayStr} (ทำงาน 09:00–18:00) เรียงจากควรทำก่อน→หลัง พิจารณา: งานเลยกำหนด, ใกล้ deadline, priority สูง, เวลาที่ใช้\nงาน:\n${todo.map(t => `- id:${t.id} | ${safe(t.title,'งาน')} | ${hrsOf(t)||1}ชม | priority:${t.priority||'medium'} | due:${t.dueDate||'-'}`).join('\n')}\nตอบ JSON เท่านั้น: {"order":[id เรียงตามลำดับ],"strategy":"กลยุทธ์สั้นๆ 1 ประโยคภาษาไทย"}`
+      const res = await fetch('/api/claude', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt, system:'ตอบ JSON เท่านั้น ห้าม markdown', max_tokens:700 }) })
+      const { text } = await res.json()
+      const s = text.indexOf('{'), e = text.lastIndexOf('}')
+      const j = JSON.parse(text.slice(s, e+1))
+      if (Array.isArray(j.order)) {
+        const byId = new Map(todo.map(t => [String(t.id), t]))
+        const seen = new Set()
+        const fromAI = j.order.map(id => byId.get(String(id))).filter(Boolean)
+        fromAI.forEach(t => seen.add(String(t.id)))
+        ordered = [...fromAI, ...todo.filter(t => !seen.has(String(t.id)))] // append any missed
+      }
+      if (j.strategy) strategy = String(j.strategy)
+    } catch { /* heuristic order already set */ }
+
+    const { placed, unplaced } = packDay(ordered, target, busy, 9, 18)
+    setPlanPreview({ date: dayStr, placed, unplaced, strategy })
+  }
+
+  async function acceptPlan() {
+    const items = planPreview?.placed || []
+    for (const p of items) await reschedule(p.id, { startAt: p.startAt, endAt: p.endAt })
+    setPlanPreview(null)
+  }
 
   // Tasks with no scheduled time → the Unscheduled panel (skip completed ones)
   const unscheduledTasks = (logs || []).filter(l => !l.startAt && l.status !== 'done')
@@ -710,6 +860,9 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
               cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
             }}>{v.label}</button>
           ))}
+          {showPanel && (
+            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
+          )}
           <button onClick={() => onAddLog({ date: new Date().toISOString().split('T')[0], title:'', imageUrls:[] })} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#6C63FF,#9B8FFF)', border:'none', borderRadius:10, fontSize:13, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 12px rgba(108,99,255,0.3)' }}>+ เพิ่มงาน</button>
         </div>
       </div>
@@ -784,6 +937,15 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
           date={quickAddDate}
           onClose={() => setQuickAddDate(null)}
           onAdd={handleQuickAdd}
+        />
+      )}
+
+      {planPreview && (
+        <PlanPreviewModal
+          plan={planPreview}
+          isMobile={isMobile}
+          onAccept={acceptPlan}
+          onClose={() => setPlanPreview(null)}
         />
       )}
     </>

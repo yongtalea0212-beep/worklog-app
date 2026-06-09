@@ -12,6 +12,8 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''
 const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const APP_URL       = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-virid.vercel.app'
+const MASCOT_FACE   = APP_URL + '/mascot-face.png?v=1'
+const MASCOT_HERO   = APP_URL + '/mascot-hero.png?v=1'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -1279,13 +1281,16 @@ function msgCompactCreated(d, saved) {
     contents:{
       type:'bubble', size:'kilo',
       header:{
-        type:'box', layout:'vertical', paddingAll:'14px', backgroundColor:cat.bg,
+        type:'box', layout:'horizontal', paddingAll:'14px', spacing:'md', backgroundColor:cat.bg,
         contents:[
-          { type:'box', layout:'horizontal', contents:[
-            { type:'text', text:headLabel, size:'xs', weight:'bold', color:headColor, flex:1 },
-            { type:'text', text:cat.emoji+' '+cat.label, size:'xxs', color:cat.color, flex:0, align:'end' },
+          { type:'image', url:MASCOT_FACE, size:'48px', aspectMode:'cover', flex:0, gravity:'top' },
+          { type:'box', layout:'vertical', flex:1, contents:[
+            { type:'box', layout:'horizontal', contents:[
+              { type:'text', text:headLabel, size:'xs', weight:'bold', color:headColor, flex:1 },
+              { type:'text', text:cat.emoji+' '+cat.label, size:'xxs', color:cat.color, flex:0, align:'end', gravity:'center' },
+            ]},
+            { type:'text', text:d.title, weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
           ]},
-          { type:'text', text:d.title, weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
         ]
       },
       body:{
@@ -1325,17 +1330,14 @@ function msgWelcome() {
     type:'flex', altText:'👋 ยินดีต้อนรับสู่ WorkLog AI — ผู้ช่วยจัดการงานผ่าน LINE',
     contents:{
       type:'bubble', size:'mega',
-      header:{
-        type:'box', layout:'vertical', paddingAll:'20px', backgroundColor:BRAND.purple,
-        contents:[
-          { type:'text', text:'WorkLog AI', size:'xl', weight:'bold', color:BRAND.white },
-          { type:'text', text:'👋 ผู้ช่วย AI จัดการงานของคุณ ผ่าน LINE', size:'sm', color:'#E8E0FF', margin:'sm', wrap:true },
-        ]
-      },
+      hero:{ type:'image', url:MASCOT_HERO, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:BRAND.purple },
       body:{
         type:'box', layout:'vertical', paddingAll:'18px', spacing:'none', backgroundColor:BRAND.cardBg,
         contents:[
-          { type:'text', text:'ทำอะไรได้บ้าง', size:'xs', weight:'bold', color:BRAND.textMuted },
+          { type:'text', text:'WorkLog AI', size:'xl', weight:'bold', color:BRAND.purple },
+          { type:'text', text:'👋 สวัสดี! ผมเป็นผู้ช่วย AI จัดการงานของคุณผ่าน LINE', size:'sm', color:BRAND.textSub, margin:'sm', wrap:true },
+          { type:'separator', margin:'lg', color:'#EDEAFF' },
+          { type:'text', text:'ทำอะไรได้บ้าง', size:'xs', weight:'bold', color:BRAND.textMuted, margin:'lg' },
           feat('📝','พิมพ์เล่างานเป็นภาษาคน','เช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" — AI จัดหมวด เวลา และเตือนให้'),
           feat('📸','ส่งรูป / ไฟล์ PDF','AI อ่านให้แล้วบันทึกเป็นงานพร้อมสรุปอัตโนมัติ'),
           feat('⏰','เตือนงานอัตโนมัติ','สรุปงานทุกเช้า และให้กดยืนยัน "เสร็จแล้ว" ได้ในแชต'),

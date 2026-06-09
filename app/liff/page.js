@@ -134,8 +134,9 @@ export default function LiffPage() {
   }
 
   const Logo = () => (
-    <div style={{ width:52, height:52, borderRadius:16, background:'linear-gradient(135deg,#1a1040,#0D1A2E)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 20px rgba(108,99,255,0.35)', marginBottom:4 }}>
-      <span style={{ background:'linear-gradient(135deg,#a78bfa,#38bdf8)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', fontSize:20, fontWeight:900, letterSpacing:'-1px' }}>SS</span>
+    <div style={{ width:52, height:52, borderRadius:16, background:'#fff', overflow:'hidden', boxShadow:'0 4px 20px rgba(108,99,255,0.35)', marginBottom:4 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand-logo.png" alt="StayScape" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
     </div>
   )
 

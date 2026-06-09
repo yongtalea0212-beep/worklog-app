@@ -25,3 +25,17 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── Root sizing chain. Dynamic viewport units (dvh) fix the mobile
+   address-bar cut-off; overflow-x guards against any stray horizontal
+   scroll. No global overflow:hidden here — standalone routes (login,
+   portfolio) keep natural document scroll. ── */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+

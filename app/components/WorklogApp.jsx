@@ -128,7 +128,8 @@ body::before {
 .logo-mark {
   width: 40px; height: 40px;
   border-radius: 13px;
-  background: linear-gradient(135deg, #6C63FF, #A78BFA);
+  background: #fff;
+  overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   font-size: 18px;
   box-shadow: 0 4px 14px rgba(108,99,255,0.4);
@@ -2331,7 +2332,7 @@ export default function App(){
           <div className="sb-logo">
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div className="logo-mark">
-  <span style={{background:"linear-gradient(135deg,#a78bfa,#38bdf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontSize:15,fontWeight:900,letterSpacing:"-1px"}}>SS</span></div>
+  <img src="/brand-logo.png" alt="StayScape" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
               <div><div className="logo-name">StayScape</div><div className="logo-sub">Work · Life · Balance</div></div>
             </div>
           </div>

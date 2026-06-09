@@ -1,5 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
+import PwaRegister from "./components/PwaRegister"
+import InstallPrompt from "./components/InstallPrompt"
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] })
@@ -72,6 +74,8 @@ export default function RootLayout({ children }) {
     <html lang="th">
       <body className={`${geistSans.variable} ${geistMono.variable}`} style={{ overflowX: "hidden", maxWidth: "100vw" }}>
         {children}
+        <PwaRegister />
+        <InstallPrompt />
       </body>
     </html>
   )

@@ -65,12 +65,35 @@ function digestCard(title, subtitle, lines, footerLabel) {
   }
 }
 
+// Evening confirm bubble — tap ✅ to mark done (handled by the LINE webhook's
+// existing action=status postback).
+function confirmBubble(t, today) {
+  const overdue = t.due_date && t.due_date < today
+  const sub = t.start_at
+    ? `🕐 ${hm(t.start_at)}${t.end_at ? '–' + hm(t.end_at) : ''}`
+    : (t.due_date ? (overdue ? '⚠️ เลยกำหนดส่ง' : '📅 ครบกำหนดวันนี้') : '')
+  return {
+    type:'bubble', size:'kilo',
+    header:{ type:'box', layout:'vertical', paddingAll:'14px', backgroundColor: overdue ? '#FFF0F0' : '#F0EEFF',
+      contents:[
+        { type:'text', text: overdue ? '⚠️ งานเลยกำหนด' : '⏰ ถึงเวลาเสร็จแล้ว', size:'xs', weight:'bold', color: overdue ? '#EF4444' : '#6C63FF' },
+        { type:'text', text:`${CAT[t.category] || '📌'} ${t.title || 'งาน'}`, weight:'bold', size:'sm', color:'#1a1a2e', wrap:true, margin:'sm' },
+        ...(sub ? [{ type:'text', text:sub, size:'xxs', color:'#9ca3af', margin:'xs' }] : []),
+      ] },
+    footer:{ type:'box', layout:'vertical', paddingAll:'10px', spacing:'sm', backgroundColor:'#FAFBFF',
+      contents:[
+        { type:'button', style:'primary', height:'sm', color:'#10B981', action:{ type:'postback', label:'✅ เสร็จแล้ว', data:`action=status&logId=${t.id}&status=done` } },
+        { type:'button', style:'secondary', height:'sm', color:'#E8E0FF', action:{ type:'uri', label:'🌐 เปิด', uri: APP_URL } },
+      ] },
+  }
+}
+
 async function run(type) {
   const today = bkkDateStr()
   // Pull candidate rows for all LINE users (small dataset; filter in JS).
   const { data, error } = await supabase
     .from('work_logs')
-    .select('line_user_id,title,category,status,date,start_at,end_at,due_date,priority')
+    .select('id,line_user_id,title,category,status,date,start_at,end_at,due_date,priority')
     .not('line_user_id', 'is', null)
     .limit(5000)
   if (error) { console.error('[CRON]', error.message); return { ok:false, error:error.message } }
@@ -100,23 +123,22 @@ async function run(type) {
       card = digestCard('☀️ แผนงานวันนี้', new Date().toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long' }),
         lines, '🌐 เปิดปฏิทิน')
 
-    } else { // pending (evening)
+    } else { // pending (evening) — confirm carousel
       const notDone = rows.filter(r => r.status !== 'done')
       const overdue = notDone.filter(r => r.due_date && r.due_date < today)
       const dueToday = notDone.filter(r => r.due_date === today)
       const scheduledToday = notDone.filter(r => r.start_at && bkkDayOf(r.start_at) === today)
-      const pool = [...overdue, ...dueToday, ...scheduledToday]
-      // de-dupe by title+category
       const seen = new Set()
-      const items = pool.filter(r => { const k = r.title + '|' + r.category; if (seen.has(k)) return false; seen.add(k); return true })
+      const items = [...overdue, ...dueToday, ...scheduledToday]
+        .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
       if (!items.length) continue
-      const lines = items.slice(0, 8).map(r => ({
-        time: r.due_date && r.due_date < today ? '⚠️' : '•',
-        color: r.due_date && r.due_date < today ? '#EF4444' : '#6C63FF',
-        text: `${CAT[r.category] || '📌'} ${r.title || 'งาน'}`,
-      }))
-      card = digestCard('🌙 สรุปงานค้างวันนี้', `ยังไม่เสร็จ ${items.length} งาน${overdue.length ? ` · เลยกำหนด ${overdue.length}` : ''}`,
-        lines, '🌐 จัดการงาน')
+      const bubbles = items.slice(0, 10).map(t => confirmBubble(t, today))
+      await pushLINE(uid, [
+        { type:'text', text:`🌙 สรุปงานวันนี้\nมี ${items.length} งานที่ยังไม่เสร็จ${overdue.length ? ` (เลยกำหนด ${overdue.length})` : ''} — กดยืนยันเมื่อทำเสร็จได้เลย` },
+        { type:'flex', altText:'ยืนยันงานที่ทำเสร็จ', contents:{ type:'carousel', contents: bubbles } },
+      ])
+      sent++
+      continue
     }
 
     if (card) { await pushLINE(uid, [card]); sent++ }

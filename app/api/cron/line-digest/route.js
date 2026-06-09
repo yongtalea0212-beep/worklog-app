@@ -88,6 +88,56 @@ function confirmBubble(t, today) {
   }
 }
 
+function isMondayBkk() { return new Date(Date.now() + 7 * 3600000).getUTCDay() === 1 }
+
+// Monday morning greeting — nudge to list the week's tasks.
+function mondayCard(pending) {
+  const sub = pending > 0
+    ? `ยกมาจากก่อนหน้า ${pending} งานที่ยังไม่เสร็จ`
+    : 'เริ่มต้นสัปดาห์ใหม่แบบเคลียร์ ✨'
+  return {
+    type:'flex', altText:'🌟 สวัสดีเช้าวันจันทร์ — อย่าลืมลิสต์งานสัปดาห์นี้',
+    contents:{
+      type:'bubble', size:'mega',
+      header:{ type:'box', layout:'vertical', paddingAll:'20px', backgroundColor:'#6C63FF',
+        contents:[
+          { type:'text', text:'🌟 สวัสดีเช้าวันจันทร์!', size:'lg', weight:'bold', color:'#FFFFFF' },
+          { type:'text', text:'เริ่มสัปดาห์ใหม่กันแล้ว 💪', size:'sm', color:'#E8E0FF', margin:'sm' },
+        ] },
+      body:{ type:'box', layout:'vertical', paddingAll:'18px', spacing:'md', backgroundColor:'#FAFBFF',
+        contents:[
+          { type:'text', text:'📝 อย่าลืมลิสต์งานของสัปดาห์นี้', size:'md', weight:'bold', color:'#1a1a2e', wrap:true },
+          { type:'text', text:sub, size:'sm', color:'#6b7099', wrap:true },
+          { type:'text', text:'พิมพ์เล่างานที่ต้องทำมาได้เลย เดี๋ยว AI จัดเวลาและเตือนให้ ⏰', size:'xs', color:'#9ca3af', wrap:true },
+        ] },
+      footer:{ type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:'#FAFBFF',
+        contents:[
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[
+            { type:'button', style:'secondary', height:'sm', color:'#E8E0FF', action:{ type:'message', label:'📋 งานค้าง', text:'งานค้าง' } },
+            { type:'button', style:'secondary', height:'sm', color:'#E8E0FF', action:{ type:'message', label:'📅 งานวันนี้', text:'งานวันนี้' } },
+          ] },
+          { type:'button', style:'primary', height:'sm', color:'#6C63FF', action:{ type:'uri', label:'🌐 เปิดปฏิทิน', uri: APP_URL } },
+        ] },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } },
+    }
+  }
+}
+
+// Greet every active follower (plus anyone with logs), once, on Monday morning.
+async function sendMondayGreetings(byUser) {
+  const ids = new Set(byUser.keys())
+  const { data } = await supabase.from('line_users').select('line_user_id').eq('active', true).limit(5000)
+  for (const u of (data || [])) if (u.line_user_id) ids.add(u.line_user_id)
+  let sent = 0
+  for (const uid of ids) {
+    const rows = byUser.get(uid) || []
+    const pending = rows.filter(r => r.status !== 'done').length
+    await pushLINE(uid, [mondayCard(pending)])
+    sent++
+  }
+  return sent
+}
+
 async function run(type) {
   const today = bkkDateStr()
   // Pull candidate rows for all LINE users (small dataset; filter in JS).
@@ -104,6 +154,10 @@ async function run(type) {
     if (!byUser.has(r.line_user_id)) byUser.set(r.line_user_id, [])
     byUser.get(r.line_user_id).push(r)
   }
+
+  // Monday greeting rides on the daily 07:00 plan cron (keeps us at 2 crons for Hobby).
+  let mondaySent = 0
+  if (type === 'plan' && isMondayBkk()) mondaySent = await sendMondayGreetings(byUser)
 
   let sent = 0
   for (const [uid, rows] of byUser) {
@@ -143,7 +197,7 @@ async function run(type) {
 
     if (card) { await pushLINE(uid, [card]); sent++ }
   }
-  return { ok:true, type, users: byUser.size, sent }
+  return { ok:true, type, users: byUser.size, sent, mondaySent }
 }
 
 export async function GET(request) {

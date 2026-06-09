@@ -12,8 +12,9 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''
 const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const APP_URL       = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-virid.vercel.app'
-const MASCOT_FACE   = APP_URL + '/mascot-face.png?v=1'
-const MASCOT_HERO   = APP_URL + '/mascot-hero.png?v=1'
+const MASCOT_FACE      = APP_URL + '/mascot-face.png?v=2'
+const MASCOT_HAPPY     = APP_URL + '/mascot-happy.png?v=2'
+const MASCOT_HERO_WAVE = APP_URL + '/mascot-hero-wave.png?v=2'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -726,23 +727,26 @@ function msgStatusUpdate(log, trigger) {
       type: 'bubble',
       size: 'kilo',
       header: {
-        type: 'box', layout: 'vertical', paddingAll: '14px',
+        type: 'box', layout: 'horizontal', paddingAll: '14px', spacing:'md',
         backgroundColor: st.bg,
         contents: [
-          {
-            type: 'box', layout: 'horizontal',
-            contents: [
-              { type:'text', text: triggerLabel, size:'xs', color:BRAND.textMuted, flex:1 },
-              {
-                type:'box', layout:'vertical',
-                cornerRadius:'20px', paddingAll:'3px',
-                paddingStart:'10px', paddingEnd:'10px',
-                backgroundColor: st.color + '22',
-                contents:[{ type:'text', text: st.emoji+' '+st.label, size:'xs', color:st.color, weight:'bold' }]
-              }
-            ]
-          },
-          { type:'text', text: log.title||'ไม่มีชื่องาน', weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
+          { type:'image', url: log.status === 'done' ? MASCOT_HAPPY : MASCOT_FACE, size:'48px', aspectMode:'cover', flex:0, gravity:'top' },
+          { type:'box', layout:'vertical', flex:1, contents:[
+            {
+              type: 'box', layout: 'horizontal',
+              contents: [
+                { type:'text', text: triggerLabel, size:'xs', color:BRAND.textMuted, flex:1, gravity:'center' },
+                {
+                  type:'box', layout:'vertical', flex:0,
+                  cornerRadius:'20px', paddingAll:'3px',
+                  paddingStart:'10px', paddingEnd:'10px',
+                  backgroundColor: st.color + '22',
+                  contents:[{ type:'text', text: st.emoji+' '+st.label, size:'xs', color:st.color, weight:'bold' }]
+                }
+              ]
+            },
+            { type:'text', text: log.title||'ไม่มีชื่องาน', weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
+          ]},
         ]
       },
       body: {
@@ -1330,7 +1334,7 @@ function msgWelcome() {
     type:'flex', altText:'👋 ยินดีต้อนรับสู่ WorkLog AI — ผู้ช่วยจัดการงานผ่าน LINE',
     contents:{
       type:'bubble', size:'mega',
-      hero:{ type:'image', url:MASCOT_HERO, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:BRAND.purple },
+      hero:{ type:'image', url:MASCOT_HERO_WAVE, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:BRAND.purple },
       body:{
         type:'box', layout:'vertical', paddingAll:'18px', spacing:'none', backgroundColor:BRAND.cardBg,
         contents:[
@@ -1420,9 +1424,10 @@ function msgDashboard(stats, projects) {
     contents:{
       type:'bubble', size:'mega',
       header:{
-        type:'box', layout:'horizontal', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
+        type:'box', layout:'horizontal', paddingAll:'16px', spacing:'md', backgroundColor:BRAND.purpleBg,
         contents:[
-          { type:'box', layout:'vertical', flex:1, contents:[
+          { type:'image', url:MASCOT_FACE, size:'46px', aspectMode:'cover', flex:0, gravity:'center' },
+          { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📊 แดชบอร์ด', weight:'bold', size:'lg', color:BRAND.purple },
             { type:'text', text:new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
           ]},

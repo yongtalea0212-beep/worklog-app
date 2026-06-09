@@ -52,6 +52,21 @@ function setSession(uid, state, data={}) { sessions.set(uid, { state, data, t:Da
 function clearSession(uid) { sessions.delete(uid) }
 
 // ─────────────────────────────────────────
+// DATE/TIME (Asia/Bangkok, UTC+7)
+// ─────────────────────────────────────────
+function bkkToday() { return new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0] }
+// Combine a Bangkok date (YYYY-MM-DD) + time (HH:MM) into a UTC ISO timestamp.
+function bkkISO(dateStr, hhmm) {
+  if (!dateStr || !hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return null
+  const t = new Date(`${dateStr}T${hhmm.padStart(5,'0')}:00+07:00`)
+  return isNaN(t) ? null : t.toISOString()
+}
+function fmtThaiDate(dateStr) {
+  try { return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short' }) }
+  catch { return dateStr }
+}
+
+// ─────────────────────────────────────────
 // SIGNATURE
 // ─────────────────────────────────────────
 function verifySig(body, sig) {
@@ -116,12 +131,19 @@ async function uploadImg(buf, id) {
 
 async function saveWorklog(uid, d) {
   try {
-    const {data,error}=await supabase.from('work_logs').insert({
+    const row = {
       line_user_id:uid, title:d.title||'งานจาก LINE', description:d.desc||'',
       ai_summary:d.summary||'', category:d.category||'other', hours_spent:d.hours||1,
       status:d.status||'done', tags:d.tags||[], date:d.date||new Date().toISOString().split('T')[0],
       image_urls:d.images||[], source:d.source||'line',
-    }).select()
+    }
+    // Scheduling fields are only written when the capture actually detected them,
+    // so plain "I did X" logs don't get spurious null schedules.
+    if (d.start_at)  row.start_at = d.start_at
+    if (d.end_at)    row.end_at   = d.end_at
+    if (d.due_date)  row.due_date = d.due_date
+    if (d.priority)  row.priority = d.priority
+    const {data,error}=await supabase.from('work_logs').insert(row).select()
     if (error){ console.error('[SAVE]',error.message); return null }
     return data?.[0]||null
   } catch(e){ console.error('[SAVE]',e); return null }
@@ -868,7 +890,10 @@ function computeDashboard(monthLogs) {
 // AI — intent understanding + task analysis
 // ─────────────────────────────────────────
 async function understand(text) {
+  const today = bkkToday()
+  const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { weekday:'long' })
   const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "WorkLog AI" ตอบ JSON เท่านั้น ห้าม markdown
+วันนี้คือ ${today} (${dow}) เขตเวลาไทย — ใช้อ้างอิงเมื่อผู้ใช้พูดถึงวัน/เวลา เช่น "พรุ่งนี้" "บ่าย 2" "ศุกร์นี้"
 ข้อความผู้ใช้: "${text}"
 หมวดงาน: graphic|video|photo|marketing|ai|branding|pos|other
 รายการ intent ที่เป็นไปได้:
@@ -876,9 +901,15 @@ async function understand(text) {
 - pending (งานค้าง/ยังไม่เสร็จ), projects (โปรเจกต์ทั้งหมด), project_tasks (งานของโปรเจกต์ใดโปรเจกต์หนึ่ง)
 - hours (เวลาทำงานเดือนนี้), productivity (สรุปประสิทธิภาพ), dashboard (แดชบอร์ด)
 - report (ดูสรุปรายงานเดือนนี้), send_pdf (สร้าง/ส่งไฟล์ PDF รายงาน), send_ppt (สร้าง/ส่งไฟล์ PowerPoint/สไลด์), help (ขอความช่วยเหลือ)
-- create_task (ผู้ใช้กำลังอธิบายงานที่ทำเพื่อบันทึก)
+- create_task (ผู้ใช้กำลังอธิบายงาน ไม่ว่าจะทำเสร็จแล้วหรือเป็นงานที่จะทำ/นัดหมายในอนาคต)
 - unknown (ไม่เข้าพวก)
-ตอบรูปแบบ: {"intent":"...","project":"<ชื่อโปรเจกต์หรือ tag ถ้า intent=project_tasks ไม่งั้น null>","task":{"title":"ชื่อกระชับ","summary":"สรุปมืออาชีพ 1-2 ประโยค","category":"...","hours":1,"tags":["t1"]}}
+สำหรับ create_task ให้แยกด้วยว่า:
+- status: "done" = ทำเสร็จไปแล้ว (เช่น "เมื่อกี้ตัดต่อวิดีโอเสร็จ"), "todo" = ยังไม่ทำ/เป็นงานที่ต้องทำหรือมีนัด (เช่น "พรุ่งนี้ต้องส่งงานลูกค้า", "บ่าย 2 ประชุม")
+- date: วันที่ของงาน YYYY-MM-DD (ถ้าพูดถึงวัน) ไม่งั้น null
+- start, end: เวลาเริ่ม/สิ้นสุด รูปแบบ "HH:MM" (24 ชม.) ถ้ามี ไม่งั้น null
+- due: วันครบกำหนดส่ง YYYY-MM-DD ถ้ามีเดดไลน์ ไม่งั้น null
+- priority: "low|medium|high" ถ้าบอกความเร่งด่วน ไม่งั้น null
+ตอบรูปแบบ: {"intent":"...","project":"<ชื่อโปรเจกต์หรือ tag ถ้า intent=project_tasks ไม่งั้น null>","task":{"title":"ชื่อกระชับ","summary":"สรุปมืออาชีพ 1-2 ประโยค","category":"...","hours":1,"tags":["t1"],"status":"done|todo","date":null,"start":null,"end":null,"due":null,"priority":null}}
 ถ้า intent ไม่ใช่ create_task ให้ task เป็น null`
   try {
     const txt = await callAI(p)
@@ -1230,15 +1261,28 @@ function btn(label, data, color, style='secondary') {
 function msgCompactCreated(d, saved) {
   const cat = CAT[d.category] || CAT.other
   const logId = saved?.id || ''
+  const isTodo = d.status && d.status !== 'done'
+  const headLabel = isTodo ? '🗓️ เพิ่มงานที่ต้องทำ' : '✅ บันทึกงานแล้ว'
+  const headColor = isTodo ? BRAND.purple : BRAND.green
+  // Schedule line: prefer a start time, else a deadline, else the date.
+  let when = '📅 ' + fmtThaiDate(d.date || bkkToday())
+  if (d.start_at) {
+    const s = new Date(new Date(d.start_at).getTime() + 7*3600000)
+    const e = d.end_at ? new Date(new Date(d.end_at).getTime() + 7*3600000) : null
+    const hhmm = x => `${String(x.getUTCHours()).padStart(2,'0')}:${String(x.getUTCMinutes()).padStart(2,'0')}`
+    when = `🕐 ${fmtThaiDate(d.date)} ${hhmm(s)}${e ? '–' + hhmm(e) : ''}`
+  } else if (d.due_date) {
+    when = '⏳ ส่ง ' + fmtThaiDate(d.due_date)
+  }
   return [{
-    type:'flex', altText:'✅ สร้างงานใหม่: '+d.title,
+    type:'flex', altText:headLabel+': '+d.title,
     contents:{
       type:'bubble', size:'kilo',
       header:{
         type:'box', layout:'vertical', paddingAll:'14px', backgroundColor:cat.bg,
         contents:[
           { type:'box', layout:'horizontal', contents:[
-            { type:'text', text:'✅ สร้างงานใหม่', size:'xs', weight:'bold', color:BRAND.green, flex:1 },
+            { type:'text', text:headLabel, size:'xs', weight:'bold', color:headColor, flex:1 },
             { type:'text', text:cat.emoji+' '+cat.label, size:'xxs', color:cat.color, flex:0, align:'end' },
           ]},
           { type:'text', text:d.title, weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
@@ -1247,8 +1291,8 @@ function msgCompactCreated(d, saved) {
       body:{
         type:'box', layout:'horizontal', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
         contents:[
-          { type:'text', text:'⏱ '+(d.hours||1)+' ชม.', size:'xs', color:BRAND.textSub, flex:1 },
-          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short'}), size:'xs', color:BRAND.textSub, flex:1, align:'end' },
+          { type:'text', text:'⏱ '+(d.hours||1)+' ชม.', size:'xs', color:BRAND.textSub, flex:0 },
+          { type:'text', text:when, size:'xs', color: (d.due_date||d.start_at) ? BRAND.purple : BRAND.textSub, weight:(d.due_date||d.start_at)?'bold':'regular', flex:1, align:'end', wrap:true },
         ]
       },
       footer:{
@@ -1258,6 +1302,56 @@ function msgCompactCreated(d, saved) {
             btn('🤖 AI วิเคราะห์', { postback:'action=analyze&logId='+logId }, '#E8E0FF'),
             btn('🌐 เปิดงาน', { uri:APP_URL }, BRAND.purple, 'primary'),
           ]},
+        ]
+      },
+      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+    }
+  }]
+}
+
+// Welcome card — shown when a new user adds the bot as a friend.
+function msgWelcome() {
+  const feat = (emoji, title, desc) => ({
+    type:'box', layout:'horizontal', spacing:'md', margin:'md',
+    contents:[
+      { type:'text', text:emoji, size:'lg', flex:0, gravity:'top' },
+      { type:'box', layout:'vertical', flex:1, contents:[
+        { type:'text', text:title, size:'sm', weight:'bold', color:BRAND.text, wrap:true },
+        { type:'text', text:desc, size:'xs', color:BRAND.textSub, wrap:true, margin:'xs' },
+      ]},
+    ]
+  })
+  return [{
+    type:'flex', altText:'👋 ยินดีต้อนรับสู่ WorkLog AI — ผู้ช่วยจัดการงานผ่าน LINE',
+    contents:{
+      type:'bubble', size:'mega',
+      header:{
+        type:'box', layout:'vertical', paddingAll:'20px', backgroundColor:BRAND.purple,
+        contents:[
+          { type:'text', text:'WorkLog AI', size:'xl', weight:'bold', color:BRAND.white },
+          { type:'text', text:'👋 ผู้ช่วย AI จัดการงานของคุณ ผ่าน LINE', size:'sm', color:'#E8E0FF', margin:'sm', wrap:true },
+        ]
+      },
+      body:{
+        type:'box', layout:'vertical', paddingAll:'18px', spacing:'none', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'text', text:'ทำอะไรได้บ้าง', size:'xs', weight:'bold', color:BRAND.textMuted },
+          feat('📝','พิมพ์เล่างานเป็นภาษาคน','เช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" — AI จัดหมวด เวลา และเตือนให้'),
+          feat('📸','ส่งรูป / ไฟล์ PDF','AI อ่านให้แล้วบันทึกเป็นงานพร้อมสรุปอัตโนมัติ'),
+          feat('⏰','เตือนงานอัตโนมัติ','สรุปงานทุกเช้า และให้กดยืนยัน "เสร็จแล้ว" ได้ในแชต'),
+          feat('📊','ถามอะไรก็ได้','"แดชบอร์ด" "งานค้าง" "รายงานเดือนนี้" "ส่ง PDF"'),
+        ]
+      },
+      footer:{
+        type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'text', text:'💡 ลองพิมพ์งานแรกของคุณได้เลย!', size:'xs', color:BRAND.textSub, align:'center' },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[
+            btn('📅 งานวันนี้', { postback:'action=cmd&cmd=today' }, '#E8E0FF'),
+            btn('❓ วิธีใช้', { postback:'action=cmd&cmd=help' }, '#E8E0FF'),
+          ]},
+          { type:'button', style:'primary', height:'sm', color:BRAND.purple,
+            action:{ type:'uri', label:'🌐 เปิด WorkLog AI', uri:APP_URL } },
         ]
       },
       styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
@@ -1823,15 +1917,7 @@ async function processEvent(event) {
 
   if (event.type==='follow') {
     await supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).catch(()=>{})
-    return replyLINE(token,[{
-      type:'text',
-      text:'👋 ยินดีต้อนรับสู่ WorkLog AI! 🎉\n\nผมเป็นผู้ช่วย AI จัดการงานของคุณผ่าน LINE\n\n💡 ลองพิมพ์:\n• "งานวันนี้" "งานค้าง" "แดชบอร์ด"\n• อธิบายงานที่ทำ → บันทึกให้อัตโนมัติ\n• ส่งรูปผลงาน → AI บันทึกให้\n\nส่ง /help เพื่อดูทั้งหมด',
-      quickReply:{items:[
-        { type:'action', action:{ type:'message', label:'📊 แดชบอร์ด', text:'แดชบอร์ด' } },
-        { type:'action', action:{ type:'message', label:'📅 งานวันนี้', text:'งานวันนี้' } },
-        { type:'action', action:{ type:'message', label:'❓ Help', text:'/help' } },
-      ]}
-    }])
+    return replyLINE(token, msgWelcome())
   }
 
   // Postback from Flex Card buttons (status change)
@@ -1973,6 +2059,16 @@ if (mtype==='text') {
     d.hours = t.hours || analyzed.hours || 1
     d.tags = (Array.isArray(t.tags) && t.tags.length) ? t.tags : (analyzed.tags || [])
   }
+  // Scheduling: a "todo" becomes an open task (so reminders pick it up); a "done"
+  // stays as a completed log. Resolve any date/time the AI extracted.
+  const isTodo = t.status === 'todo'
+  const taskDate = t.date || bkkToday()
+  d.date = taskDate
+  d.status = isTodo ? 'draft' : 'done'
+  if (t.start) d.start_at = bkkISO(taskDate, t.start)
+  if (t.end)   d.end_at   = bkkISO(taskDate, t.end)
+  if (t.due)   d.due_date = t.due
+  if (['low','medium','high'].includes(t.priority)) d.priority = t.priority
   const saved = await saveWorklog(uid, d)
   return replyLINE(token, msgCompactCreated(d, saved))
 }

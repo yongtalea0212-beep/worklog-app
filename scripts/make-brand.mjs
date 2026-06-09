@@ -1,13 +1,21 @@
 // Generates StayScape brand assets into public/ (+ favicon.ico) using sharp.
 // Run: node scripts/make-brand.mjs
+//
+// If a source logo exists at public/brand-logo.{png,jpg,jpeg,webp} it is used
+// for every icon (centered on a light tile) and the OG banner. Otherwise a
+// built-in "S" mark is drawn as a fallback.
 import sharp from 'sharp'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { writeFileSync } from 'fs'
+import { writeFileSync, existsSync } from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUB = join(__dirname, '..', 'public')
 const APP = join(__dirname, '..', 'app')
+
+const SRC_LOGO = ['png', 'jpg', 'jpeg', 'webp']
+  .map(ext => join(PUB, `brand-logo.${ext}`))
+  .find(p => existsSync(p)) || null
 
 // ── The StayScape "S" mark on a rounded tile (brand purple→cyan) ──
 function iconSVG({ bg = true } = {}) {
@@ -73,8 +81,26 @@ function icoFromPng(pngBuf, size) {
   return Buffer.concat([header, entry, pngBuf])
 }
 
-const icon = Buffer.from(iconSVG())
-const png = (size) => sharp(icon).resize(size, size).png()
+// Light tile background for icons (so a transparent/circular source logo gets
+// filled corners — required for iOS apple-touch-icon and maskable PWA icons).
+const TILE = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EEF2FF"/><stop offset="1" stop-color="#DCE7FF"/></linearGradient>
+    <radialGradient id="g" cx="0.5" cy="0.35" r="0.7"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#t)"/><ellipse cx="256" cy="170" rx="240" ry="150" fill="url(#g)"/></svg>`
+
+// Build the 512px master icon: real logo composited on the tile, else the drawn S.
+async function masterIcon() {
+  if (SRC_LOGO) {
+    const logo = await sharp(SRC_LOGO).resize(456, 456, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+    return sharp(Buffer.from(TILE)).composite([{ input: logo, gravity: 'center' }]).png().toBuffer()
+  }
+  return sharp(Buffer.from(iconSVG())).png().toBuffer()
+}
+
+const master = await masterIcon()
+const png = (size) => sharp(master).resize(size, size).png()
 
 // App Router file conventions → Next auto-generates <link> tags (no duplication).
 await png(512).toFile(join(APP, 'icon.png'))         // /icon  (+ favicon fallback)
@@ -85,6 +111,14 @@ writeFileSync(join(APP, 'favicon.ico'), icoFromPng(fav64, 64)) // /favicon.ico
 // public/ assets referenced by manifest.json + OG meta (fixed, scrapable URLs).
 await png(192).toFile(join(PUB, 'icon-192.png'))
 await png(512).toFile(join(PUB, 'icon-512.png'))
-await sharp(Buffer.from(ogSVG())).jpeg({ quality: 90 }).toFile(join(PUB, 'og-image.jpg'))
 
-console.log('✅ brand assets: app/{favicon.ico,icon.png,apple-icon.png} + public/{icon-192,icon-512,og-image.jpg}')
+// OG banner: purple background + wordmark (SVG), then composite the real logo
+// (or the drawn-S tile) on the left.
+const ogBg = ogSVG().replace(/<!-- logo tile -->[\s\S]*?<\/g>/, '')
+const ogLogo = await sharp(SRC_LOGO ? await sharp(SRC_LOGO).resize(300, 300, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer() : await png(300).toBuffer())
+  .resize(300, 300).png().toBuffer()
+await sharp(Buffer.from(ogBg))
+  .composite([{ input: ogLogo, top: 165, left: 150 }])
+  .jpeg({ quality: 90 }).toFile(join(PUB, 'og-image.jpg'))
+
+console.log(`✅ brand assets from ${SRC_LOGO ? 'public/' + SRC_LOGO.split('/').pop() : 'built-in S mark'} → app/{favicon.ico,icon.png,apple-icon.png} + public/{icon-192,icon-512,og-image.jpg}`)

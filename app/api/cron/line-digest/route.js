@@ -10,6 +10,8 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const APP_URL      = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-virid.vercel.app'
+const MASCOT_FACE  = APP_URL + '/mascot-face.png?v=1'
+const MASCOT_HERO  = APP_URL + '/mascot-hero.png?v=1'
 const CRON_SECRET  = process.env.CRON_SECRET || ''
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -62,10 +64,13 @@ function digestCard(title, subtitle, lines, footerLabel) {
     type:'flex', altText:title,
     contents:{
       type:'bubble', size:'mega',
-      header:{ type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:'#F0EEFF',
+      header:{ type:'box', layout:'horizontal', paddingAll:'16px', spacing:'md', backgroundColor:'#F0EEFF',
         contents:[
-          { type:'text', text:title, weight:'bold', size:'md', color:'#6C63FF' },
-          ...(subtitle ? [{ type:'text', text:subtitle, size:'xs', color:'#9ca3af', margin:'xs' }] : []),
+          { type:'image', url:MASCOT_FACE, size:'44px', aspectMode:'cover', flex:0, gravity:'center' },
+          { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
+            { type:'text', text:title, weight:'bold', size:'md', color:'#6C63FF' },
+            ...(subtitle ? [{ type:'text', text:subtitle, size:'xs', color:'#9ca3af', margin:'xs' }] : []),
+          ] },
         ] },
       body:{ type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:'#FAFBFF',
         contents: lines.length ? lines.map(l => ({
@@ -116,13 +121,10 @@ function mondayCard(pending) {
     type:'flex', altText:'🌟 สวัสดีเช้าวันจันทร์ — อย่าลืมลิสต์งานสัปดาห์นี้',
     contents:{
       type:'bubble', size:'mega',
-      header:{ type:'box', layout:'vertical', paddingAll:'20px', backgroundColor:'#6C63FF',
-        contents:[
-          { type:'text', text:'🌟 สวัสดีเช้าวันจันทร์!', size:'lg', weight:'bold', color:'#FFFFFF' },
-          { type:'text', text:'เริ่มสัปดาห์ใหม่กันแล้ว 💪', size:'sm', color:'#E8E0FF', margin:'sm' },
-        ] },
+      hero:{ type:'image', url:MASCOT_HERO, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:'#6C63FF' },
       body:{ type:'box', layout:'vertical', paddingAll:'18px', spacing:'md', backgroundColor:'#FAFBFF',
         contents:[
+          { type:'text', text:'🌟 สวัสดีเช้าวันจันทร์!', size:'lg', weight:'bold', color:'#6C63FF' },
           { type:'text', text:'📝 อย่าลืมลิสต์งานของสัปดาห์นี้', size:'md', weight:'bold', color:'#1a1a2e', wrap:true },
           { type:'text', text:sub, size:'sm', color:'#6b7099', wrap:true },
           { type:'text', text:'พิมพ์เล่างานที่ต้องทำมาได้เลย เดี๋ยว AI จัดเวลาและเตือนให้ ⏰', size:'xs', color:'#9ca3af', wrap:true },
@@ -196,9 +198,12 @@ function weeklyCard(stats, ai) {
     type:'flex', altText:'📈 สรุปผลงานสัปดาห์นี้',
     contents:{
       type:'bubble', size:'mega',
-      header:{ type:'box', layout:'horizontal', paddingAll:'18px', backgroundColor:'#6C63FF',
+      header:{ type:'box', layout:'horizontal', paddingAll:'18px', spacing:'md', backgroundColor:'#6C63FF',
         contents:[
-          { type:'box', layout:'vertical', flex:1, contents:[
+          { type:'box', layout:'vertical', flex:0, width:'50px', height:'50px', cornerRadius:'25px',
+            backgroundColor:'#FFFFFF', justifyContent:'center', alignItems:'center',
+            contents:[{ type:'image', url:MASCOT_FACE, size:'38px', aspectMode:'cover' }] },
+          { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📈 สรุปสัปดาห์นี้', size:'lg', weight:'bold', color:'#FFFFFF' },
             { type:'text', text:'WorkLog AI · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },
           ] },

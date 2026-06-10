@@ -139,6 +139,19 @@ async function pushLINE(userId, messages) {
   } catch(e) { console.error('[PUSH]', e); return false }
 }
 
+// Show the "…" loading animation in a 1:1 chat while we work (auto-dismissed
+// when the next message is sent). loadingSeconds must be 5–60 (multiple of 5).
+async function startLoading(userId, seconds = 10) {
+  if (!LINE_TOKEN || !userId) return
+  try {
+    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+LINE_TOKEN },
+      body: JSON.stringify({ chatId: userId, loadingSeconds: seconds }),
+    })
+  } catch {}
+}
+
 async function getContent(msgId) {
   if (!LINE_TOKEN) return null
   try {
@@ -2087,12 +2100,20 @@ if (mtype==='text') {
   const text=(event.message.text||'').trim()
   if (!text) return
   if (text.startsWith('/')) return handleCmd(uid,text,token)
+
+  // Rich-menu "เพิ่มงาน" → prompt instead of creating a junk task.
+  if (text === 'เพิ่มงาน') {
+    return replyLINE(token,[{ type:'text', text:'📝 พิมพ์เล่างานที่ทำหรือจะทำได้เลยครับ\nเช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" หรือ "ออกแบบโปสเตอร์ร้านกาแฟ 2 ชม."\n\nเดี๋ยว AI จัดหมวด เวลา และเตือนให้อัตโนมัติ ✨\nหรือส่งรูป/ไฟล์ PDF ก็บันทึกให้ได้เลย' }])
+  }
+
   const s=getSession(uid)
   if (s.state!=='idle') {
     const handled=await handleSession(uid,text,token)
     if (handled!==false) return
   }
 
+  // Show the typing/loading animation while AI understands + saves.
+  await startLoading(uid)
   // AI Command Center: understand the message (intent) in a single AI call.
   const understood = await understand(text)
 
@@ -2138,6 +2159,7 @@ if (mtype==='text') {
 
   // IMAGE
   if (mtype==='image') {
+    await startLoading(uid)
     const s=getSession(uid)
     // Adding image to existing worklog
     if (s.state==='adding_img' && s.data.id) {
@@ -2172,6 +2194,7 @@ if (mtype==='text') {
   if (mtype==='video') return replyLINE(token,[{type:'text',text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก'}])
   if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับข้อความเสียงแล้ว ✅\nตอนนี้ยังไม่รองรับการถอดเสียงอัตโนมัติ — พิมพ์อธิบายงานเพื่อบันทึกได้เลยครับ'}])
   if (mtype==='file') {
+    await startLoading(uid)
     const fileName = event.message.fileName || 'ไฟล์'
     // Only PDFs get the intelligence pipeline; other files are acknowledged.
     if (!/\.pdf$/i.test(fileName)) {

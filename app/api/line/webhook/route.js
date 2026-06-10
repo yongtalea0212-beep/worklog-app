@@ -205,6 +205,11 @@ async function getWorklog(id) {
   return data
 }
 
+async function deleteWorklog(id) {
+  const {error}=await supabase.from('work_logs').delete().eq('id',id)
+  return !error
+}
+
 async function getTodayLogs(uid) {
   const today=new Date().toISOString().split('T')[0]
   const {data}=await supabase.from('work_logs').select('id,title,category,hours_spent,date')
@@ -578,9 +583,16 @@ function msgTaskCard(log) {
           { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('🕐 เวลา','/edit-time'), editBtn('📅 กำหนดส่ง','/edit-due') ] },
           { type:'box', layout:'horizontal', spacing:'sm', contents:[
             editBtn('📸 เพิ่มรูป','/addimage'),
-            { type:'button', style:'secondary', height:'sm', flex:1, color:'#D9F7E8',
-              action:{ type:'postback', label:'✅ ทำเสร็จ', data:'action=status&logId='+id+'&status=done' } },
+            { type:'button', style:'secondary', height:'sm', flex:1, color:'#FFE0E0',
+              action:{ type:'postback', label:'🗑 ลบงาน', data:'action=delete_ask&logId='+id } },
           ]},
+          { type:'text', text:'สถานะงาน', size:'xxs', color:BRAND.textMuted, align:'center', margin:'sm' },
+          { type:'box', layout:'horizontal', spacing:'sm', contents: ['done','in_progress','draft'].map(s => ({
+            type:'button', height:'sm', flex:1,
+            style: log.status===s ? 'primary' : 'secondary',
+            color: log.status===s ? STATUS[s].c : '#EDEAFF',
+            action:{ type:'postback', label: STATUS[s].e+' '+(s==='done'?'เสร็จ':s==='in_progress'?'ทำอยู่':'ร่าง'), data:'action=status&logId='+id+'&status='+s },
+          })) },
           { type:'button', style:'primary', height:'sm', color:BRAND.purple, action:{ type:'uri', label:'🌐 เปิดในแอป', uri:APP_URL } },
         ]
       },
@@ -1314,6 +1326,31 @@ function btn(label, data, color, style='secondary') {
 }
 
 // Compact "new task created" popup card (§6)
+// Delete confirmation card — guards against accidental deletes.
+function msgDeleteConfirm(log) {
+  if (!log) return [{ type:'text', text:'ไม่พบงานนี้ครับ' }]
+  return [{
+    type:'flex', altText:'ยืนยันลบงาน: ' + (log.title||''),
+    contents:{
+      type:'bubble', size:'kilo',
+      body:{ type:'box', layout:'vertical', paddingAll:'18px', spacing:'sm', backgroundColor:'#FFF8F8',
+        contents:[
+          { type:'text', text:'🗑 ลบงานนี้?', weight:'bold', size:'md', color:BRAND.red },
+          { type:'text', text: log.title||'งาน', size:'sm', color:BRAND.text, wrap:true, margin:'sm' },
+          { type:'text', text:'การลบไม่สามารถย้อนกลับได้', size:'xs', color:BRAND.textMuted, margin:'sm' },
+        ] },
+      footer:{ type:'box', layout:'horizontal', paddingAll:'12px', spacing:'sm', backgroundColor:'#FFF8F8',
+        contents:[
+          { type:'button', style:'secondary', height:'sm', flex:1, color:'#EDEAFF',
+            action:{ type:'message', label:'↩️ ยกเลิก', text:'/edit '+log.id } },
+          { type:'button', style:'primary', height:'sm', flex:1, color:BRAND.red,
+            action:{ type:'postback', label:'✅ ลบเลย', data:'action=delete&logId='+log.id } },
+        ] },
+      styles:{ footer:{ separator:true, separatorColor:'#FFE0E0' } }
+    }
+  }]
+}
+
 // Welcome card — shown when a new user adds the bot as a friend.
 function msgWelcome() {
   const feat = (emoji, title, desc) => ({
@@ -1957,6 +1994,15 @@ async function processEvent(event) {
       await updateWorklog(logId, { status: newStatus })
       const updated = await getWorklog(logId)
       if (updated) return replyLINE(token, msgTaskCard(updated))
+    }
+
+    // 🗑 Delete — ask for confirmation, then delete.
+    if (action === 'delete_ask' && logId) {
+      return replyLINE(token, msgDeleteConfirm(await getWorklog(logId)))
+    }
+    if (action === 'delete' && logId) {
+      const ok = await deleteWorklog(logId)
+      return replyLINE(token, [{ type:'text', text: ok ? '🗑 ลบงานแล้ว' : '⚠️ ลบไม่สำเร็จ ลองใหม่อีกครั้งครับ' }])
     }
 
     // 🤖 AI Analyze Task

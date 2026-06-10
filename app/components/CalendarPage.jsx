@@ -194,6 +194,16 @@ const CAL_CSS = `
 @keyframes ts-drawer { from{transform:translateX(100%)} to{transform:translateX(0)} }
 @keyframes ts-sheet  { from{transform:translateY(100%)} to{transform:translateY(0)} }
 @keyframes ts-fade   { from{opacity:0} to{opacity:1} }
+
+/* Mobile: keep FullCalendar's own toolbar (prev/next/today + title) readable */
+@media (max-width: 820px) {
+  .fc .fc-toolbar.fc-header-toolbar { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px !important; }
+  .fc .fc-toolbar-chunk { display: flex; justify-content: center; }
+  .fc .fc-toolbar-title { font-size: 16px !important; text-align: center; }
+  .fc .fc-button { padding: 8px 14px !important; font-size: 13px !important; }
+  .fc .fc-col-header-cell-cushion { font-size: 11px !important; }
+  .fc .fc-daygrid-day-number { font-size: 12px !important; }
+}
 `
 
 // ─────────────────────────────────────────
@@ -964,29 +974,38 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       <style>{CAL_CSS}</style>
 
       {/* Page header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:22, flexWrap:'wrap', gap:12 }}>
-        <div>
-          <div style={{ fontSize:22, fontWeight:700, color:'#1a1a2e' }}>Calendar</div>
-          <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>วางแผนงานแบบ time-blocking · ลากงานมาวางบนตารางเวลา</div>
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          {[
-            { key:'dayGridMonth', label:'เดือน' },
-            { key:'timeGridWeek', label:'สัปดาห์' },
-            { key:'timeGridDay',  label:'วัน' },
-          ].map(v => (
-            <button key={v.key} onClick={() => { setView(v.key); calendarRef.current?.getApi().changeView(v.key) }} style={{
-              padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight: view===v.key?700:500,
-              border:'1px solid '+(view===v.key?'rgba(108,99,255,0.28)':'rgba(200,210,240,0.5)'),
-              background: view===v.key?'rgba(108,99,255,0.12)':'rgba(255,255,255,0.65)',
-              color: view===v.key?'#6C63FF':'#6b7099',
-              cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
-            }}>{v.label}</button>
-          ))}
-          {showPanel && (
-            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
+      <div style={{ marginBottom:18 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+          <div>
+            <div style={{ fontSize:22, fontWeight:700, color:'#1a1a2e' }}>Calendar</div>
+            <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>วางแผนงานแบบ time-blocking · ลากงานมาวางบนตารางเวลา</div>
+          </div>
+          {!isMobile && showPanel && (
+            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ padding:'9px 18px', borderRadius:12, fontSize:13, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
           )}
-          <button onClick={() => onAddLog({ date: new Date().toISOString().split('T')[0], title:'', imageUrls:[] })} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#6C63FF,#9B8FFF)', border:'none', borderRadius:10, fontSize:13, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 12px rgba(108,99,255,0.3)' }}>+ เพิ่มงาน</button>
+        </div>
+
+        {/* View toggle — responsive segmented control (full-width on mobile) */}
+        <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap', alignItems:'center' }}>
+          <div style={{ display:'flex', gap:4, flex: isMobile ? '1 1 100%' : '0 0 auto', background:'rgba(255,255,255,0.55)', border:'1px solid rgba(200,210,240,0.5)', borderRadius:14, padding:4 }}>
+            {[
+              { key:'dayGridMonth', label:'เดือน' },
+              { key:'timeGridWeek', label:'สัปดาห์' },
+              { key:'timeGridDay',  label:'วัน' },
+            ].map(v => (
+              <button key={v.key} onClick={() => { setView(v.key); calendarRef.current?.getApi().changeView(v.key) }} style={{
+                flex:1, padding:'10px 16px', borderRadius:10, fontSize:14, fontWeight: view===v.key?700:600,
+                border:'none', whiteSpace:'nowrap', minWidth: isMobile ? 0 : 78,
+                background: view===v.key ? 'linear-gradient(135deg,#6C63FF,#9B8FFF)' : 'transparent',
+                color: view===v.key ? '#fff' : '#6b7099',
+                cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
+                boxShadow: view===v.key ? '0 2px 8px rgba(108,99,255,0.3)' : 'none',
+              }}>{v.label}</button>
+            ))}
+          </div>
+          {isMobile && showPanel && (
+            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ flex:'1 1 100%', padding:'12px', borderRadius:12, fontSize:14, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
+          )}
         </div>
       </div>
 

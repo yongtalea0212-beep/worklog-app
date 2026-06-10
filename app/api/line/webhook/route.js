@@ -1992,8 +1992,11 @@ async function processEvent(event) {
   const mtype = event.message?.type
 
   if (event.type==='follow') {
-    await supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).catch(()=>{})
-    return replyLINE(token, msgWelcome())
+    // Send the welcome FIRST — don't let a slow DB write delay it past the
+    // reply token's lifetime. Record the follower in the background.
+    const sent = replyLINE(token, msgWelcome())
+    try { supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).then(()=>{},()=>{}) } catch {}
+    return sent
   }
 
   // Postback from Flex Card buttons (status change)

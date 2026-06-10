@@ -2101,6 +2101,9 @@ if (mtype==='text') {
   if (!text) return
   if (text.startsWith('/')) return handleCmd(uid,text,token)
 
+  // Manual welcome (the follow event only fires on first add / unblock).
+  if (/^(เริ่มต้น|เริ่มใช้งาน|แนะนำ|start|getstarted)$/i.test(text)) return replyLINE(token, msgWelcome())
+
   // Rich-menu "เพิ่มงาน" → prompt instead of creating a junk task.
   if (text === 'เพิ่มงาน') {
     return replyLINE(token,[{ type:'text', text:'📝 พิมพ์เล่างานที่ทำหรือจะทำได้เลยครับ\nเช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" หรือ "ออกแบบโปสเตอร์ร้านกาแฟ 2 ชม."\n\nเดี๋ยว AI จัดหมวด เวลา และเตือนให้อัตโนมัติ ✨\nหรือส่งรูป/ไฟล์ PDF ก็บันทึกให้ได้เลย' }])

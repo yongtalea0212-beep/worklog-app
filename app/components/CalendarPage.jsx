@@ -195,6 +195,16 @@ const CAL_CSS = `
 @keyframes ts-sheet  { from{transform:translateY(100%)} to{transform:translateY(0)} }
 @keyframes ts-fade   { from{opacity:0} to{opacity:1} }
 
+/* More-link popover: always on top, scrollable, never overlaps the page below */
+.fc .fc-popover { z-index: 140 !important; max-height: 60vh; overflow-y: auto; border-radius: 14px !important; box-shadow: 0 12px 40px rgba(60,70,130,0.28) !important; border: 1px solid rgba(255,255,255,0.95) !important; }
+.fc .fc-popover-body { padding: 8px !important; }
+/* Easier-to-tap day cells & events */
+.fc .fc-daygrid-day-frame { min-height: 70px; }
+.fc .fc-daygrid-day-number { padding: 6px 9px !important; cursor: pointer; }
+.fc .fc-daygrid-event { padding: 3px 6px !important; }
+.fc .fc-daygrid-more-link { font-weight: 700; }
+.fc .fc-timegrid-event { min-height: 24px; }
+
 /* Mobile: keep FullCalendar's own toolbar (prev/next/today + title) readable */
 @media (max-width: 820px) {
   .fc .fc-toolbar.fc-header-toolbar { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px !important; }
@@ -202,7 +212,10 @@ const CAL_CSS = `
   .fc .fc-toolbar-title { font-size: 16px !important; text-align: center; }
   .fc .fc-button { padding: 8px 14px !important; font-size: 13px !important; }
   .fc .fc-col-header-cell-cushion { font-size: 11px !important; }
-  .fc .fc-daygrid-day-number { font-size: 12px !important; }
+  .fc .fc-daygrid-day-number { font-size: 13px !important; font-weight: 700; }
+  .fc .fc-daygrid-day-frame { min-height: 56px; }
+  .fc .fc-daygrid-event { font-size: 11px !important; }
+  .fc .fc-popover { left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important; }
 }
 `
 
@@ -1034,7 +1047,11 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}
             eventReceive={handleEventReceive}
-            allDaySlot={false}
+            allDaySlot={true}
+            allDayText={'ทั้งวัน'}
+            navLinks={true}
+            navLinkDayClick={(date) => { setView('timeGridDay'); calendarRef.current?.getApi().changeView('timeGridDay', date) }}
+            moreLinkClick={(arg) => { setView('timeGridDay'); calendarRef.current?.getApi().changeView('timeGridDay', arg.date); return 'none' }}
             slotMinTime="06:00:00"
             slotMaxTime="23:00:00"
             slotDuration="00:30:00"

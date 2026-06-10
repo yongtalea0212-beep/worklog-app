@@ -34,7 +34,7 @@ const SlideCanvas = memo(function SlideCanvas({ slide, theme, index, total }) {
   if (slide.type === 'cover') return (
     <div style={wrap}>{orbs}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40, zIndex: 1 }}>
-        <div style={{ fontSize: 9, fontWeight: 800, color: accent, letterSpacing: 3, marginBottom: 14, opacity: .9 }}>{(slide.eyebrow || 'WORKLOG AI').toUpperCase()}</div>
+        <div style={{ fontSize: 9, fontWeight: 800, color: accent, letterSpacing: 3, marginBottom: 14, opacity: .9 }}>{(slide.eyebrow || 'STAYSCAPE').toUpperCase()}</div>
         <div style={{ fontSize: 28, fontWeight: 800, color: text, lineHeight: 1.2, marginBottom: 12, letterSpacing: -1 }}>{slide.title}</div>
         <div style={{ fontSize: 13, color: text2, maxWidth: 380, lineHeight: 1.7, marginBottom: 24 }}>{slide.subtitle}</div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -162,12 +162,62 @@ const SlideCanvas = memo(function SlideCanvas({ slide, theme, index, total }) {
   if (slide.type === 'closing') return (
     <div style={wrap}>{orbs}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40, zIndex: 1 }}>
-        <div style={{ fontSize: 9, fontWeight: 800, color: accent, letterSpacing: 3, marginBottom: 14, opacity: .9 }}>{(slide.eyebrow || 'WORKLOG AI').toUpperCase()}</div>
+        <div style={{ fontSize: 9, fontWeight: 800, color: accent, letterSpacing: 3, marginBottom: 14, opacity: .9 }}>{(slide.eyebrow || 'STAYSCAPE').toUpperCase()}</div>
         <div style={{ fontSize: 34, fontWeight: 800, color: text, lineHeight: 1.15, marginBottom: 12, letterSpacing: -1 }}>{slide.title || 'Thank You'}</div>
         {slide.subtitle && <div style={{ fontSize: 13, color: text2, maxWidth: 420, lineHeight: 1.7 }}>{slide.subtitle}</div>}
       </div>{pager}
     </div>
   )
+
+  if (slide.type === 'showcase') {
+    const imgs = (slide.images || []).slice(0, 6)
+    const cols = imgs.length <= 2 ? 2 : 3
+    return (
+      <div style={wrap}>{orbs}
+        <div style={{ position: 'relative', zIndex: 1, padding: '26px 34px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+          {eyebrow(slide.section || 'PORTFOLIO')}
+          <div style={{ fontSize: 20, fontWeight: 800, color: text, letterSpacing: -.5, lineHeight: 1.2 }}>{slide.title}</div>
+          {slide.subtitle && <div style={{ fontSize: 11, color: text2, marginTop: 4, marginBottom: 12 }}>{slide.subtitle}</div>}
+          <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${cols},1fr)`, gridAutoRows: '1fr', gap: 10, marginTop: slide.subtitle ? 0 : 12 }}>
+            {imgs.map((im, i) => (
+              <div key={i} style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${cardBd}`, background: card }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={im.url} alt={im.caption || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', top: 8, left: 8, padding: '2px 8px', borderRadius: 20, background: `${accent}cc`, fontSize: 8, fontWeight: 700, color: '#fff' }}>{im.catLabel}</div>
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '14px 10px 8px', background: 'linear-gradient(to top, rgba(8,10,28,0.85), transparent)' }}>
+                  <div style={{ fontSize: 9.5, color: '#fff', fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{im.caption}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>{pager}
+      </div>
+    )
+  }
+
+  if (slide.type === 'portfolio') {
+    const items = (slide.items || []).slice(0, 6)
+    return (
+      <div style={wrap}>{orbs}
+        <div style={{ position: 'relative', zIndex: 1, padding: '28px 36px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          {eyebrow(slide.section || 'WORK DETAILS')}
+          <div style={{ fontSize: 20, fontWeight: 800, color: text, marginBottom: 12, letterSpacing: -.5 }}>{slide.title}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+            {items.map((it, i) => (
+              <div key={i} style={{ background: card, border: `1px solid ${cardBd}`, borderRadius: 12, padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 6, background: `${accent}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 9, fontWeight: 800, color: accent }}>{i + 1}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: text, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{it.title}</div>
+                </div>
+                {it.summary ? <div style={{ fontSize: 9.5, color: text2, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.summary}</div> : null}
+                <div style={{ fontSize: 9, color: text3, fontWeight: 600 }}>{it.catLabel} · {it.hours}h{it.date ? ' · ' + it.date : ''}</div>
+              </div>
+            ))}
+          </div>
+        </div>{pager}
+      </div>
+    )
+  }
 
   // content + default
   return (

@@ -140,7 +140,7 @@ export async function exportToPPTX(slides, theme, meta = {}) {
       })
     }
 
-    else if (slide.type === 'content') {
+    else if (slide.type === 'content' || slide.type === 'showcase' || slide.type === 'portfolio') {
       eyebrow(s, slide.eyebrow || slide.section || 'Content')
       heading(s, slide.title)
       if (slide.subtitle) s.addText(String(slide.subtitle), { x: 0.8, y: 1.8, w: W - 1.6, h: 0.45, fontSize: 14, color: txtS, fontFace: FONT, margin: 0 })

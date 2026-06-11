@@ -2020,6 +2020,18 @@ export default function App(){
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
 
+  // Deep-link: /?page=calendar (e.g. from the LINE rich menu) opens that page.
+  useEffect(()=>{
+    try {
+      const p = new URLSearchParams(window.location.search).get('page')
+      const valid = ['dashboard','logs','projects','calendar','reports','ai-assistant','export','presentation','gallery','portfolio','profile']
+      if (p && valid.includes(p)) {
+        setPage(p)
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } catch {}
+  },[])
+
   useEffect(()=>{
     async function load(){
       // getSession reads local storage (no network) so this works offline too.

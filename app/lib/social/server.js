@@ -21,11 +21,17 @@ export async function resolveOrg(request) {
   const { data: { user }, error } = await db.auth.getUser(token)
   if (error || !user) throw { status: 401, message: 'invalid session' }
 
-  const { data: profile } = await db.from('users').select('organization_id').eq('id', user.id).single()
+  const { data: profile } = await db.from('users').select('organization_id, role').eq('id', user.id).single()
   const orgId = profile?.organization_id
   if (!orgId) throw { status: 409, message: 'no organization — open the dashboard first to onboard' }
 
-  return { db, user, orgId }
+  return { db, user, orgId, role: profile?.role || 'viewer' }
+}
+
+// Best-effort product analytics. Never throws into the request path.
+export async function logActivity(db, orgId, userId, action, meta = {}) {
+  try { await db.from('activity_logs').insert({ organization_id: orgId, user_id: userId || null, action, meta }) }
+  catch { /* non-fatal */ }
 }
 
 // Stable, non-reversible author tag (never store raw commenter PII).

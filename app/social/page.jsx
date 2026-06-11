@@ -11,19 +11,21 @@ import {
 
 const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: '📊', live: true },
+  { key: 'insights', label: 'AI Insights', icon: '✨' },
   { key: 'pages', label: 'Pages', icon: '📄' },
   { key: 'posts', label: 'Posts', icon: '📝' },
   { key: 'comments', label: 'Comments', icon: '💬' },
-  { key: 'analytics', label: 'Analytics', icon: '📈' },
   { key: 'keywords', label: 'Keywords', icon: '🔑' },
   { key: 'competitors', label: 'Competitors', icon: '🥊' },
   { key: 'trends', label: 'Trends', icon: '🔥' },
   { key: 'reports', label: 'Reports', icon: '📑' },
-  { key: 'alerts', label: 'Alerts', icon: '🔔' },
+  { key: 'team', label: 'Team', icon: '👥' },
+  { key: 'activity', label: 'Activity', icon: '🕘' },
   { key: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
 const NAV_ROUTES = {
+  insights: '/social/insights',
   pages: '/social/import',
   posts: '/social/posts',
   comments: '/social/comments',
@@ -31,6 +33,8 @@ const NAV_ROUTES = {
   competitors: '/social/competitors',
   trends: '/social/trends',
   reports: '/social/reports',
+  team: '/social/team',
+  activity: '/social/activity',
   settings: '/social/settings',
 }
 

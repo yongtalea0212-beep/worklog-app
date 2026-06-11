@@ -53,10 +53,16 @@ export default function ReportsPage() {
             <div className="rp-d">ข้อมูลดิบ 3 ชีต วิเคราะห์ต่อได้</div>
             {busy === 'xlsx' && <div className="rp-load">กำลังสร้าง...</div>}
           </button>
+          <button className="rp-opt" disabled={!token || busy} onClick={() => download('pptx')}>
+            <div className="rp-ic" style={{ background: '#fef3c7', color: '#b45309' }}>📽️</div>
+            <div className="rp-name">PowerPoint</div>
+            <div className="rp-d">สไลด์พรีเซนต์ KPI + Top Posts</div>
+            {busy === 'pptx' && <div className="rp-load">กำลังสร้าง...</div>}
+          </button>
         </div>
 
         {msg && <div className={`rp-msg ${msg.type}`}>{msg.type === 'ok' ? '✅' : '⚠️'} {msg.text}</div>}
-        <p className="rp-note">PowerPoint + การส่งออกตามกำหนดเวลา (scheduled) จะมาใน Phase 3</p>
+        <p className="rp-note">การส่งออกตามกำหนดเวลา (scheduled) อยู่ระหว่างพัฒนา</p>
       </div>
     </div>
   )
@@ -69,7 +75,7 @@ const CSS = `
   .rp-back { background:none; border:none; color:#2563EB; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; padding:0; margin-bottom:10px; }
   .rp-title { font-size:22px; font-weight:800; margin:0; letter-spacing:-.4px; }
   .rp-sub { font-size:12.5px; color:#94a3b8; margin:4px 0 18px; }
-  .rp-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .rp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
   .rp-opt { background:#fff; border:1px solid #eef2f7; border-radius:16px; padding:22px; text-align:left; cursor:pointer; font-family:inherit; box-shadow:0 1px 2px rgba(15,23,42,.04); transition:.15s; }
   .rp-opt:hover:not(:disabled) { border-color:#2563EB; transform:translateY(-2px); box-shadow:0 8px 24px rgba(37,99,235,.12); }
   .rp-opt:disabled { opacity:.6; cursor:default; }

@@ -115,6 +115,37 @@ async function buildPdf(d) {
   return await renderToBuffer(doc)
 }
 
+async function buildPptx(d) {
+  const PptxGenJS = (await import('pptxgenjs')).default
+  const pptx = new PptxGenJS()
+  pptx.defineLayout({ name: 'W', width: 10, height: 5.63 }); pptx.layout = 'W'
+  const FONT = 'IBM Plex Sans Thai'
+
+  const cover = pptx.addSlide(); cover.background = { color: '2563EB' }
+  cover.addText('Social Insight AI', { x: 0.6, y: 1.8, w: 8.8, fontFace: FONT, fontSize: 40, bold: true, color: 'FFFFFF' })
+  cover.addText(`รายงานสรุป · ${d.org}`, { x: 0.6, y: 2.9, w: 8.8, fontFace: FONT, fontSize: 18, color: 'DBEAFE' })
+  cover.addText(d.generatedAt.toLocaleString('th-TH'), { x: 0.6, y: 3.5, w: 8.8, fontFace: FONT, fontSize: 12, color: 'BFDBFE' })
+
+  const kpiSlide = pptx.addSlide()
+  kpiSlide.addText('ตัวชี้วัดหลัก', { x: 0.5, y: 0.3, fontFace: FONT, fontSize: 24, bold: true, color: '2563EB' })
+  const kpis = [['เพจ', d.kpis.pages], ['โพสต์', d.kpis.posts], ['คอมเมนต์', d.kpis.comments],
+    ['Positive %', d.kpis.positivePct], ['Neutral %', d.kpis.neutralPct], ['Negative %', d.kpis.negativePct]]
+  kpis.forEach(([label, val], i) => {
+    const x = 0.5 + (i % 3) * 3.1, y = 1.2 + Math.floor(i / 3) * 1.9
+    kpiSlide.addShape(pptx.ShapeType.roundRect, { x, y, w: 2.9, h: 1.6, fill: { color: 'F6F8FB' }, line: { color: 'EEF2F7' }, rectRadius: 0.1 })
+    kpiSlide.addText(String(val), { x, y: y + 0.2, w: 2.9, align: 'center', fontFace: FONT, fontSize: 30, bold: true, color: '2563EB' })
+    kpiSlide.addText(label, { x, y: y + 1.0, w: 2.9, align: 'center', fontFace: FONT, fontSize: 12, color: '64748B' })
+  })
+
+  const topSlide = pptx.addSlide()
+  topSlide.addText('Top Posts', { x: 0.5, y: 0.3, fontFace: FONT, fontSize: 24, bold: true, color: '2563EB' })
+  const rows = [[{ text: 'เพจ', options: { bold: true } }, { text: 'เนื้อหา', options: { bold: true } }, { text: 'Engagement', options: { bold: true } }],
+    ...d.topPosts.map((p) => [p.page, p.content, String(p.engagement)])]
+  topSlide.addTable(rows, { x: 0.5, y: 1.0, w: 9, fontFace: FONT, fontSize: 11, border: { type: 'solid', color: 'EEF2F7' }, color: '0F172A' })
+
+  return Buffer.from(await pptx.write({ outputType: 'nodebuffer' }))
+}
+
 export async function GET(request) {
   let ctx
   try { ctx = await resolveOrg(request) } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }) }
@@ -128,6 +159,13 @@ export async function GET(request) {
       return new Response(buf, { headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="social-insight-${stamp}.xlsx"`,
+      } })
+    }
+    if (format === 'pptx') {
+      const buf = await buildPptx(data)
+      return new Response(buf, { headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'Content-Disposition': `attachment; filename="social-insight-${stamp}.pptx"`,
       } })
     }
     const buf = await buildPdf(data)

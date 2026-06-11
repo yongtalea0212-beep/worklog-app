@@ -2,7 +2,7 @@
 //   POST (Bearer user token) → analyze the caller's org pending comments.
 //   GET  (x-cron-secret)     → analyze a global batch (Vercel Cron).
 // Uses OpenAI strict-JSON; persists sentiments and flags comments analyzed.
-import { admin, resolveOrg } from '../../../lib/social/server'
+import { admin, resolveOrg, logActivity } from '../../../lib/social/server'
 import { openaiJson } from '../../../lib/social/openai'
 import { SYSTEM_ANALYST, sentimentPrompt } from '../../../lib/social/prompts'
 
@@ -52,6 +52,7 @@ export async function POST(request) {
   catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }) }
   try {
     const result = await analyzeBatch(ctx.db, ctx.orgId)
+    if (result.analyzed) await logActivity(ctx.db, ctx.orgId, ctx.user.id, 'analyze', { analyzed: result.analyzed })
     return Response.json({ ok: true, ...result })
   } catch (e) {
     return Response.json({ error: String(e.message || e) }, { status: 500 })

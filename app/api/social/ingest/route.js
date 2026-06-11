@@ -2,7 +2,7 @@
 // Accepts normalized RawPageData (see app/lib/social/ingestion.ts) and upserts
 // tracked_pages → posts → comments for the caller's org. Idempotent via the
 // unique constraints in migration 0003. No FB tokens / Insights involved.
-import { resolveOrg, hashAuthor } from '../../../lib/social/server'
+import { resolveOrg, hashAuthor, logActivity } from '../../../lib/social/server'
 
 const nowIso = () => new Date().toISOString()
 
@@ -79,6 +79,7 @@ export async function POST(request) {
     insertedComments = data.length
   }
 
+  await logActivity(db, orgId, ctx.user.id, 'ingest', { page: pageRow.name, posts: insertedPosts.length, comments: insertedComments })
   return Response.json({
     ok: true, pageId: pageRow.id,
     counts: { pages: 1, posts: insertedPosts.length, comments: insertedComments },

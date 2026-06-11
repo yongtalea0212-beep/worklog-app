@@ -65,7 +65,7 @@ function bkkISO(dateStr, hhmm) {
   return isNaN(t) ? null : t.toISOString()
 }
 function fmtThaiDate(dateStr) {
-  try { return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short' }) }
+  try { return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', day:'numeric', month:'short' }) }
   catch { return dateStr }
 }
 // HH:MM (Bangkok) from a stored ISO timestamp.
@@ -208,6 +208,7 @@ async function updateWorklog(id, d) {
   if (d.start_at!==undefined) update.start_at=d.start_at
   if (d.end_at!==undefined)   update.end_at=d.end_at
   if (d.due_date!==undefined) update.due_date=d.due_date
+  if (d.workdate!==undefined) update.date=d.workdate
   if (d.priority!==undefined) update.priority=d.priority
   const {error}=await supabase.from('work_logs').update(update).eq('id',id)
   return !error
@@ -593,7 +594,7 @@ function msgTaskCard(log) {
           { type:'text', text:'✏️ แก้ไขได้เลยผ่าน LINE', size:'xxs', color:BRAND.textMuted, align:'center' },
           { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📝 ชื่อ','/edit-title'), editBtn('📄 รายละเอียด','/edit-desc') ] },
           { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('⏱ ชั่วโมง','/edit-hours'), editBtn('📂 หมวด','/edit-cat') ] },
-          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('🕐 เวลา','/edit-time'), editBtn('📅 กำหนดส่ง','/edit-due') ] },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📆 วันที่','/edit-date'), editBtn('🕐 เวลา','/edit-time'), editBtn('📅 กำหนดส่ง','/edit-due') ] },
           { type:'box', layout:'horizontal', spacing:'sm', contents:[
             editBtn('📸 เพิ่มรูป','/addimage'),
             { type:'button', style:'secondary', height:'sm', flex:1, color:'#FFE0E0',
@@ -972,7 +973,7 @@ function computeDashboard(monthLogs) {
 // ─────────────────────────────────────────
 async function understand(text) {
   const today = bkkToday()
-  const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { weekday:'long' })
+  const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', weekday:'long' })
   const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "StayScape" ตอบ JSON เท่านั้น ห้าม markdown
 วันนี้คือ ${today} (${dow}) เขตเวลาไทย — ใช้อ้างอิงเมื่อผู้ใช้พูดถึงวัน/เวลา เช่น "พรุ่งนี้" "บ่าย 2" "ศุกร์นี้"
 ข้อความผู้ใช้: "${text}"
@@ -1853,6 +1854,10 @@ async function handleCmd(uid, text, token) {
     setSession(uid,'editing_due',{id:arg})
     return replyLINE(token,[{type:'text',text:'📅 พิมพ์วันครบกำหนด เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้" (พิมพ์ "ลบ" เพื่อเอาออก):'}])
   }
+  if (cmd==='/edit-date' && arg) {
+    setSession(uid,'editing_date',{id:arg})
+    return replyLINE(token,[{type:'text',text:'📆 พิมพ์วันที่ของงาน เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้":'}])
+  }
   if (cmd==='/edit-cat' && arg) {
     setSession(uid,'editing_cat',{id:arg})
     // Quick Reply with category buttons
@@ -1967,6 +1972,13 @@ async function handleSession(uid, text, token) {
     if (due===null) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้"'}])
     const id=s.data.id; clearSession(uid)
     await updateWorklog(id,{ due_date: due || null })
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
+  }
+  if (s.state==='editing_date') {
+    const wd=parseDateInput(text)
+    if (!wd) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้"'}])
+    const id=s.data.id; clearSession(uid)
+    await updateWorklog(id,{ workdate: wd })
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_cat') {

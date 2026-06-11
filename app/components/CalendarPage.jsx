@@ -9,6 +9,12 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell } from 'rechar
 // ─────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────
+// Local calendar date (YYYY-MM-DD) — uses the browser's timezone, NOT UTC, so
+// "today" is correct in Thailand even past midnight (toISOString would be UTC).
+const ymd = (d = new Date()) => {
+  const x = new Date(d)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
 const CATS = [
   { id:'graphic',   label:'Graphic Design', color:'#6C63FF', bg:'rgba(108,99,255,0.1)',  icon:'🎨' },
   { id:'video',     label:'Video Editing',  color:'#06B6D4', bg:'rgba(6,182,212,0.1)',   icon:'🎬' },
@@ -280,7 +286,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
     onEdit({
       id, title, description, aiSummary, category,
       hours: Number(hours) || 0, status, tags,
-      date: date ? date.split('T')[0] : new Date().toISOString().split('T')[0],
+      date: date ? date.split('T')[0] : ymd(),
       imageUrls, imageCount: imageUrls.length,
       startAt: props.startAt || null, endAt: props.endAt || null,
       dueDate: dueDate || null, priority,
@@ -514,13 +520,13 @@ const round1 = v => Math.round(v * 10) / 10
 const hrsOf = l => Number(l.hours || l.hours_spent || 0)
 
 function CalendarStats({ logs }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = ymd()
   const scheduled = logs.filter(l => l.startAt)
   const done      = logs.filter(l => l.status === 'done')
   const unsched   = logs.filter(l => !l.startAt && l.status !== 'done')
   const plannedH  = round1(scheduled.reduce((s,l) => s + hrsOf(l), 0))
   const loggedH   = round1(done.reduce((s,l) => s + hrsOf(l), 0))
-  const todayH    = round1(scheduled.filter(l => String(l.startAt).split('T')[0] === today).reduce((s,l)=>s+hrsOf(l),0))
+  const todayH    = round1(scheduled.filter(l => ymd(new Date(l.startAt)) === today).reduce((s,l)=>s+hrsOf(l),0))
 
   const health = todayH <= 6
     ? { label:'🟢 พอดี',     color:'#10B981' }
@@ -575,7 +581,7 @@ function CalendarAnalytics({ logs }) {
   const DOW = ['จ','อ','พ','พฤ','ศ','ส','อา']
   const days = DOW.map((label,i) => {
     const d = new Date(wkStart); d.setDate(d.getDate() + i)
-    const key = d.toISOString().split('T')[0]
+    const key = ymd(d)
     const hours = round1(week.filter(l => l.date === key).reduce((s,l) => s + hrsOf(l), 0))
     return { label, hours }
   })
@@ -590,7 +596,7 @@ function CalendarAnalytics({ logs }) {
   const avgDaily = workDays ? round1(plannedH / workDays) : 0
   const total = week.length, doneN = week.filter(l => l.status === 'done').length
   const completionRate = total ? Math.round(doneN / total * 100) : 0
-  const today = new Date().toISOString().split('T')[0]
+  const today = ymd()
   const overdue = all.filter(l => l.status !== 'done' && l.dueDate && l.dueDate < today).length
 
   const insights = [
@@ -971,7 +977,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       hours:       Number(editData.hours) || 0,
       status:      safe(editData.status, 'done'),
       tags:        Array.isArray(editData.tags) ? editData.tags : [],
-      date:        safe(editData.date, new Date().toISOString().split('T')[0]),
+      date:        safe(editData.date, ymd()),
       imageUrls:   Array.isArray(editData.imageUrls) ? editData.imageUrls : [],
       imageCount:  (editData.imageUrls || []).length,
       // Preserve scheduling so editing via the form doesn't unschedule the task.

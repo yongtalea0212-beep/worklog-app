@@ -316,7 +316,7 @@ async function run(type) {
         text: `${CAT[r.category] || '📌'} ${r.title || 'งาน'}`,
       }))
       if (unscheduled) lines.push({ time:'📥', text:`อีก ${unscheduled} งานยังไม่จัดเวลา — กด "🤖 จัดตารางให้" ในแอป`, color:'#F59E0B' })
-      card = digestCard('☀️ แผนงานวันนี้', new Date().toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long' }),
+      card = digestCard('☀️ แผนงานวันนี้', new Date().toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', weekday:'long', day:'numeric', month:'long' }),
         lines, '🌐 เปิดปฏิทิน')
 
     } else { // pending (evening) — confirm carousel

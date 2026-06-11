@@ -180,7 +180,7 @@ async function saveWorklog(uid, d) {
     const row = {
       line_user_id:uid, title:d.title||'งานจาก LINE', description:d.desc||'',
       ai_summary:d.summary||'', category:d.category||'other', hours_spent:d.hours||1,
-      status:d.status||'done', tags:d.tags||[], date:d.date||new Date().toISOString().split('T')[0],
+      status:d.status||'done', tags:d.tags||[], date:d.date||bkkToday(),
       image_urls:d.images||[], source:d.source||'line',
     }
     // Scheduling fields are only written when the capture actually detected them,
@@ -224,7 +224,7 @@ async function deleteWorklog(id) {
 }
 
 async function getTodayLogs(uid) {
-  const today=new Date().toISOString().split('T')[0]
+  const today=bkkToday()
   const {data}=await supabase.from('work_logs').select('id,title,category,hours_spent,date')
     .eq('line_user_id',uid).eq('date',today).limit(20)
   return data||[]
@@ -480,7 +480,7 @@ function msgWorklogSaved(d, saved) {
           }] : []),
 
           // Date
-          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH'), size:'xs', color:BRAND.textMuted },
+          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'}), size:'xs', color:BRAND.textMuted },
         ]
       },
 
@@ -792,7 +792,7 @@ function msgStatusUpdate(log, trigger) {
   const triggerLabel = TRIGGERS[trigger] || '📋 StayScape'
   const dateStr = log.date
     ? new Date(log.date).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
-    : new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
+    : new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short',year:'2-digit'})
   const logId = log.id || ''
 
   return [{
@@ -914,7 +914,7 @@ async function getMonthLogsFull(uid) {
   return data || []
 }
 async function getDoneToday(uid) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = bkkToday()
   const { data } = await supabase.from('work_logs').select(SEL)
     .eq('line_user_id', uid).eq('date', today).eq('status', 'done').limit(30)
   return data || []
@@ -1475,7 +1475,7 @@ function msgDashboard(stats, projects) {
           { type:'image', url:MASCOT_FACE, size:'46px', aspectMode:'cover', flex:0, gravity:'center' },
           { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📊 แดชบอร์ด', weight:'bold', size:'lg', color:BRAND.purple },
-            { type:'text', text:new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
+            { type:'text', text:new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
           ]},
           { type:'box', layout:'vertical', flex:0, justifyContent:'center', cornerRadius:'20px', paddingAll:'6px', paddingStart:'14px', paddingEnd:'14px', backgroundColor:BRAND.purple,
             contents:[{ type:'text', text:stats.completion+'%', size:'md', weight:'bold', color:BRAND.white }] },
@@ -1674,11 +1674,11 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
     case 'today': {
       const logs = await getTodayLogs(uid)
       if (!logs.length) return replyLINE(token,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nพิมพ์บอกว่าทำงานอะไรเพื่อบันทึก!'}])
-      return replyLINE(token, msgToday(logs, new Date().toISOString().split('T')[0]))
+      return replyLINE(token, msgToday(logs, bkkToday()))
     }
     case 'done_today': {
       const logs = await getDoneToday(uid)
-      return replyLINE(token, msgTaskList('✅ งานเสร็จวันนี้', new Date().toLocaleDateString('th-TH'), logs, BRAND.green))
+      return replyLINE(token, msgTaskList('✅ งานเสร็จวันนี้', new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'}), logs, BRAND.green))
     }
     case 'week': {
       const logs = await getWeekLogs(uid)
@@ -1686,7 +1686,7 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
     }
     case 'month': {
       const logs = await getMonthLogsFull(uid)
-      return replyLINE(token, msgTaskList('📅 งานเดือนนี้', new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), logs))
+      return replyLINE(token, msgTaskList('📅 งานเดือนนี้', new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), logs))
     }
     case 'recent': {
       const logs = await getRecentLogs(uid, 5)
@@ -1754,7 +1754,7 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
           header:{ type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
             contents:[
               { type:'text', text:'📈 รายงานเดือนนี้', weight:'bold', size:'md', color:BRAND.purple },
-              { type:'text', text:new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
+              { type:'text', text:new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
             ]},
           body:{ type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:BRAND.cardBg,
             contents:[
@@ -1810,7 +1810,7 @@ async function handleCmd(uid, text, token) {
   }
 
   if (cmd==='/today') {
-    const today=new Date().toISOString().split('T')[0]
+    const today=bkkToday()
     const logs=await getTodayLogs(uid)
     if (!logs.length) return replyLINE(token,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nส่งข้อความหรือรูปเพื่อบันทึกงาน!'}])
     return replyLINE(token, msgToday(logs, today))

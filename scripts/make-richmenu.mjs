@@ -18,6 +18,7 @@ const ICON = {
   dash:   '<rect x="-26" y="-4" width="14" height="30" rx="3"/><rect x="-6" y="-20" width="14" height="46" rx="3"/><rect x="14" y="-12" width="14" height="38" rx="3"/>',
   report: '<polyline points="-26,18 -8,-4 6,8 26,-20" fill="none"/><polyline points="14,-20 26,-20 26,-8" fill="none"/>',
   add:    '<line x1="0" y1="-24" x2="0" y2="24"/><line x1="-24" y1="0" x2="24" y2="0"/>',
+  cal:    '<rect x="-26" y="-20" width="52" height="46" rx="7" fill="none"/><line x1="-26" y1="-6" x2="26" y2="-6"/><line x1="-13" y1="-28" x2="-13" y2="-14"/><line x1="13" y1="-28" x2="13" y2="-14"/><circle cx="-12" cy="8" r="2.6"/><circle cx="0" cy="8" r="2.6"/><circle cx="12" cy="8" r="2.6"/><circle cx="-12" cy="18" r="2.6"/><circle cx="0" cy="18" r="2.6"/>',
   help:   '<path d="M-14,-8 a14,14 0 1 1 18,16 c-4,3 -4,4 -4,10" fill="none"/><circle cx="0" cy="26" r="3.5"/>',
 }
 
@@ -61,7 +62,7 @@ const svg = `<svg width="2500" height="1686" viewBox="0 0 2500 1686" xmlns="http
   ${cell(1750, 0,    750, 562, 'pending', 'งานค้าง')}
   ${cell(1000, 562,  750, 562, 'dash',    'แดชบอร์ด')}
   ${cell(1750, 562,  750, 562, 'report',  'รายงาน')}
-  ${cell(1000, 1124, 750, 562, 'add',     'เพิ่มงาน')}
+  ${cell(1000, 1124, 750, 562, 'cal',     'เปิดปฏิทิน')}
   ${cell(1750, 1124, 750, 562, 'help',    'วิธีใช้')}
 </svg>`
 

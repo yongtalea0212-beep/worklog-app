@@ -24,7 +24,7 @@ const richMenu = {
     { bounds: { x: 1750, y: 0,    width: 750,  height: 562  }, action: { type: 'message', text: 'งานค้าง' } },
     { bounds: { x: 1000, y: 562,  width: 750,  height: 562  }, action: { type: 'message', text: 'แดชบอร์ด' } },
     { bounds: { x: 1750, y: 562,  width: 750,  height: 562  }, action: { type: 'message', text: 'รายงานเดือนนี้' } },
-    { bounds: { x: 1000, y: 1124, width: 750,  height: 562  }, action: { type: 'message', text: 'เพิ่มงาน' } },
+    { bounds: { x: 1000, y: 1124, width: 750,  height: 562  }, action: { type: 'uri', uri: APP_URL + '/?page=calendar' } },
     { bounds: { x: 1750, y: 1124, width: 750,  height: 562  }, action: { type: 'message', text: '/help' } },
   ],
 }

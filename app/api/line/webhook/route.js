@@ -640,8 +640,8 @@ function msgToday(logs, date) {
           { type:'text', text:h+'h', size:'xs', weight:'bold', color:cat.color, flex:0 },
         ]},
         { type:'box', layout:'horizontal', margin:'xs', contents:[
-          { type:'box', layout:'vertical', flex:pct, height:'4px', backgroundColor:cat.color, cornerRadius:'2px' },
-          ...(pct<100?[{ type:'box', layout:'vertical', flex:100-pct, height:'4px', backgroundColor:'#E8E0FF', cornerRadius:'2px' }]:[]),
+          { type:'box', layout:'vertical', flex:Math.max(pct,1), height:'4px', backgroundColor:cat.color, cornerRadius:'2px', contents:[{ type:'filler' }] },
+          ...(pct<100?[{ type:'box', layout:'vertical', flex:100-pct, height:'4px', backgroundColor:'#E8E0FF', cornerRadius:'2px', contents:[{ type:'filler' }] }]:[]),
         ]}
       ]
     }

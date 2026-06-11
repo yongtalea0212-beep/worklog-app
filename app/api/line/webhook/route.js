@@ -47,12 +47,26 @@ const CAT = {
 }
 
 // ─────────────────────────────────────────
-// SESSION (in-memory — Vercel serverless)
+// SESSION — persisted in Supabase (line_sessions). In-memory Maps don't
+// survive across Vercel serverless invocations, so multi-step edit flows
+// (prompt in one request, the typed reply in the next) lost their state and
+// fell through to "create new task". A small table fixes that.
 // ─────────────────────────────────────────
-const sessions = new Map()
-function getSession(uid) { return sessions.get(uid) || { state:'idle', data:{} } }
-function setSession(uid, state, data={}) { sessions.set(uid, { state, data, t:Date.now() }) }
-function clearSession(uid) { sessions.delete(uid) }
+const SESSION_TTL_MS = 15 * 60 * 1000
+async function getSession(uid) {
+  try {
+    const { data } = await supabase.from('line_sessions').select('state,data,updated_at').eq('line_user_id', uid).single()
+    if (!data) return { state:'idle', data:{} }
+    if (data.updated_at && Date.now() - new Date(data.updated_at).getTime() > SESSION_TTL_MS) return { state:'idle', data:{} }
+    return { state: data.state || 'idle', data: data.data || {} }
+  } catch { return { state:'idle', data:{} } }
+}
+async function setSession(uid, state, data={}) {
+  try { await supabase.from('line_sessions').upsert({ line_user_id: uid, state, data, updated_at: new Date().toISOString() }) } catch {}
+}
+async function clearSession(uid) {
+  try { await supabase.from('line_sessions').delete().eq('line_user_id', uid) } catch {}
+}
 
 // ─────────────────────────────────────────
 // DATE/TIME (Asia/Bangkok, UTC+7)
@@ -1797,14 +1811,14 @@ async function handleCmd(uid, text, token) {
   const arg=parts.slice(1).join(' ')
 
   if (cmd==='/skip') {
-    const s=getSession(uid)
+    const s=await getSession(uid)
     if (s.state==='awaiting_desc' && s.data.imgUrl) {
       const d={ title:'รูปภาพจาก LINE', desc:'', summary:'', category:'photo', hours:1, tags:['photo'], images:[s.data.imgUrl] }
       const saved=await saveWorklog(uid,d)
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token, msgWorklogSaved(d, saved))
     }
-    clearSession(uid)
+    await clearSession(uid)
     return replyLINE(token,[{type:'text',text:'ไม่มีรูปค้างอยู่ครับ'}])
   }
 
@@ -1833,31 +1847,31 @@ async function handleCmd(uid, text, token) {
   }
 
   if (cmd==='/edit-title' && arg) {
-    setSession(uid,'editing_title',{id:arg})
+    await setSession(uid,'editing_title',{id:arg})
     return replyLINE(token,[{type:'text',text:'✏️ พิมพ์ชื่องานใหม่:'}])
   }
   if (cmd==='/edit-desc' && arg) {
-    setSession(uid,'editing_desc',{id:arg})
+    await setSession(uid,'editing_desc',{id:arg})
     return replyLINE(token,[{type:'text',text:'📄 พิมพ์รายละเอียดงานใหม่:'}])
   }
   if (cmd==='/edit-hours' && arg) {
-    setSession(uid,'editing_hours',{id:arg})
+    await setSession(uid,'editing_hours',{id:arg})
     return replyLINE(token,[{type:'text',text:'⏱ พิมพ์จำนวนชั่วโมง เช่น: 2.5'}])
   }
   if (cmd==='/edit-time' && arg) {
-    setSession(uid,'editing_time',{id:arg})
+    await setSession(uid,'editing_time',{id:arg})
     return replyLINE(token,[{type:'text',text:'🕐 พิมพ์ช่วงเวลา เช่น 14:00-15:30 (หรือเวลาเริ่มอย่างเดียว 14:00):'}])
   }
   if (cmd==='/edit-due' && arg) {
-    setSession(uid,'editing_due',{id:arg})
+    await setSession(uid,'editing_due',{id:arg})
     return replyLINE(token,[{type:'text',text:'📅 พิมพ์วันครบกำหนด เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้" (พิมพ์ "ลบ" เพื่อเอาออก):'}])
   }
   if (cmd==='/edit-date' && arg) {
-    setSession(uid,'editing_date',{id:arg})
+    await setSession(uid,'editing_date',{id:arg})
     return replyLINE(token,[{type:'text',text:'📆 พิมพ์วันที่ของงาน เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้":'}])
   }
   if (cmd==='/edit-cat' && arg) {
-    setSession(uid,'editing_cat',{id:arg})
+    await setSession(uid,'editing_cat',{id:arg})
     // Quick Reply with category buttons
     return replyLINE(token,[{
       type:'text', text:'📂 เลือกหมวดหมู่:',
@@ -1868,12 +1882,12 @@ async function handleCmd(uid, text, token) {
     const parts2=arg.split(' '), id=parts2[0], cat=parts2[1]
     if (!CAT[cat]) return replyLINE(token,[{type:'text',text:'หมวดไม่ถูกต้อง'}])
     await updateWorklog(id,{category:cat})
-    clearSession(uid)
+    await clearSession(uid)
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
 
   if (cmd==='/addimage' && arg) {
-    setSession(uid,'adding_img',{id:arg})
+    await setSession(uid,'adding_img',{id:arg})
     return replyLINE(token,[{type:'text',text:'📸 ส่งรูปที่ต้องการเพิ่ม:'}])
   }
 
@@ -1925,10 +1939,10 @@ async function handleCmd(uid, text, token) {
 // SESSION HANDLER
 // ─────────────────────────────────────────
 async function handleSession(uid, text, token) {
-  const s=getSession(uid)
+  const s=await getSession(uid)
 
   if (s.state==='awaiting_desc') {
-    clearSession(uid)
+    await clearSession(uid)
     await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์...'}])
     const analyzed=await analyze(text,text)
     const d={
@@ -1942,18 +1956,18 @@ async function handleSession(uid, text, token) {
   }
 
   if (s.state==='editing_title') {
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{title:text})
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_desc') {
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{desc:text})
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_hours') {
     const h=parseFloat(text)||1
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{hours:h})
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
@@ -1961,21 +1975,21 @@ async function handleSession(uid, text, token) {
     const tr=parseTimeRange(text)
     if (!tr) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบเวลาไม่ถูกต้อง ลองใหม่ เช่น 14:00-15:30'}])
     const id=s.data.id; const log=await getWorklog(id); const date=log?.date||bkkToday()
-    clearSession(uid)
+    await clearSession(uid)
     await updateWorklog(id,{ start_at: bkkISO(date,tr.start), end_at: tr.end ? bkkISO(date,tr.end) : null })
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_due') {
     const due=parseDateInput(text)
     if (due===null) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้"'}])
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{ due_date: due || null })
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_date') {
     const wd=parseDateInput(text)
     if (!wd) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้"'}])
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{ workdate: wd })
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
@@ -1985,7 +1999,7 @@ async function handleSession(uid, text, token) {
       type:'text', text:'กรุณาเลือกหมวดจากปุ่มด้านล่าง:',
       quickReply: qrCategories('/set-cat', s.data.id)
     }])
-    const id=s.data.id; clearSession(uid)
+    const id=s.data.id; await clearSession(uid)
     await updateWorklog(id,{category:cat})
     return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
@@ -2048,7 +2062,7 @@ async function processEvent(event) {
 
     // Create all tasks detected from a PDF (§7)
     if (action === 'pdf_create') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       const tasks = (s.state === 'pdf_tasks' && Array.isArray(s.data.tasks)) ? s.data.tasks : []
       if (!tasks.length) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ กรุณาส่งไฟล์ PDF อีกครั้งครับ'}])
       let created = 0
@@ -2060,7 +2074,7 @@ async function processEvent(event) {
         })
         if (saved) created++
       }
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{
         type:'text',
         text:'✅ สร้าง '+created+' งานจากเอกสารแล้ว (สถานะ: ร่าง)\nเปิดแก้ไขรายละเอียดได้ในแอป',
@@ -2071,13 +2085,13 @@ async function processEvent(event) {
       }])
     }
     if (action === 'pdf_cancel') {
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'ยกเลิกแล้ว ไม่ได้สร้างงานจากเอกสาร ❌'}])
     }
 
     // AI Inbox confirmation (§10)
     if (action === 'inbox_create') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       if (s.state !== 'inbox_confirm' || !s.data.analysis) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ ส่งรูปอีกครั้งครับ'}])
       const a = s.data.analysis
       const tags = [...(a.tags || [])]
@@ -2090,17 +2104,17 @@ async function processEvent(event) {
         tags, images: [s.data.imgUrl].filter(Boolean), status: 'draft', source: 'line-inbox',
       }
       const saved = await saveWorklog(uid, d)
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token, msgTaskCard(saved))
     }
     if (action === 'inbox_describe') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       const imgUrl = s.data?.imgUrl || null
-      setSession(uid, 'awaiting_desc', { imgUrl })
+      await setSession(uid, 'awaiting_desc', { imgUrl })
       return replyLINE(token,[{type:'text',text:'✏️ พิมพ์รายละเอียดงานในรูปนี้ได้เลยครับ'}])
     }
     if (action === 'inbox_skip') {
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'ข้ามแล้ว — รูปถูกเก็บไว้ในคลังภาพแล้ว ✅'}])
     }
     return
@@ -2122,7 +2136,7 @@ if (mtype==='text') {
     return replyLINE(token,[{ type:'text', text:'📝 พิมพ์เล่างานที่ทำหรือจะทำได้เลยครับ\nเช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" หรือ "ออกแบบโปสเตอร์ร้านกาแฟ 2 ชม."\n\nเดี๋ยว AI จัดหมวด เวลา และเตือนให้อัตโนมัติ ✨\nหรือส่งรูป/ไฟล์ PDF ก็บันทึกให้ได้เลย' }])
   }
 
-  const s=getSession(uid)
+  const s=await getSession(uid)
   if (s.state!=='idle') {
     const handled=await handleSession(uid,text,token)
     if (handled!==false) return
@@ -2176,7 +2190,7 @@ if (mtype==='text') {
   // IMAGE
   if (mtype==='image') {
     await startLoading(uid)
-    const s=getSession(uid)
+    const s=await getSession(uid)
     // Adding image to existing worklog
     if (s.state==='adding_img' && s.data.id) {
       const buf=await getContent(event.message.id)
@@ -2185,10 +2199,10 @@ if (mtype==='text') {
         const log=await getWorklog(s.data.id)
         const imgs=[...(log?.image_urls||[]),url]
         await updateWorklog(s.data.id,{images:imgs})
-        clearSession(uid)
+        await clearSession(uid)
         return replyLINE(token, msgTaskCard(await getWorklog(s.data.id)))
       }
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'⚠️ อัปโหลดรูปไม่สำเร็จ'}])
     }
     // New image → AI Inbox: understand it with Claude vision (§10)
@@ -2199,11 +2213,11 @@ if (mtype==='text') {
       ? await analyzeImageInbox(buf.toString('base64'))
       : null
     if (analysis) {
-      setSession(uid,'inbox_confirm',{ analysis, imgUrl })
+      await setSession(uid,'inbox_confirm',{ analysis, imgUrl })
       return replyLINE(token, msgInboxCard(analysis, imgUrl))
     }
     // Fallback: vision unavailable/too large → ask for a description.
-    setSession(uid,'awaiting_desc',{imgUrl})
+    await setSession(uid,'awaiting_desc',{imgUrl})
     return replyLINE(token, msgImageReceived(imgUrl||'https://via.placeholder.com/800x400/6C63FF/FFFFFF?text=WorkLog+AI'))
   }
 
@@ -2234,7 +2248,7 @@ if (mtype==='text') {
     info.pages = pages // carry the real page count to the summary card
     const messages = [msgPdfSummary(fileName, info)]
     if (info.tasks.length) {
-      setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })
+      await setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })
       messages.push(msgPdfTasks(info.tasks))
     } else {
       messages.push({ type:'text', text:'ℹ️ ไม่พบงานที่ชัดเจนให้สร้างจากเอกสารนี้' })

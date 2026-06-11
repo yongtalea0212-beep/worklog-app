@@ -27,6 +27,10 @@ const NAV_ROUTES = {
   pages: '/social/import',
   posts: '/social/posts',
   comments: '/social/comments',
+  keywords: '/social/keywords',
+  competitors: '/social/competitors',
+  trends: '/social/trends',
+  reports: '/social/reports',
   settings: '/social/settings',
 }
 

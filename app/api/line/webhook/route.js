@@ -16,7 +16,9 @@ const MASCOT_FACE      = APP_URL + '/mascot-face.png?v=2'
 const MASCOT_HAPPY     = APP_URL + '/mascot-happy.png?v=2'
 const MASCOT_HERO_WAVE = APP_URL + '/mascot-hero-wave.png?v=2'
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+// Fallbacks keep `next build` page-data collection from throwing when env is
+// absent (CI/sandbox); real values are always present at runtime on Vercel.
+const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_KEY || 'placeholder')
 
 // StayScape Brand Colors
 const BRAND = {

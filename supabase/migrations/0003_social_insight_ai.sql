@@ -326,6 +326,7 @@ begin
     'alerts','reports','line_accounts','notifications','subscriptions',
     'activity_logs','audit_logs'
   ] loop
+    begin
     execute format('alter table public.%I enable row level security;', t);
 
     execute format($f$
@@ -340,7 +341,8 @@ begin
                and public.current_role() in ('super_admin','org_admin','analyst'))
         with check (organization_id = public.current_org_id());
     $f$, t);
-  exception when duplicate_object then null;
+    exception when duplicate_object then null;
+    end;
   end loop;
 end $$;
 

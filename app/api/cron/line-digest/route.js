@@ -16,7 +16,9 @@ const MASCOT_ALERT = APP_URL + '/mascot-alert.png?v=2'
 const MASCOT_HERO  = APP_URL + '/mascot-hero.png?v=2'
 const CRON_SECRET  = process.env.CRON_SECRET || ''
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+// Fallbacks keep `next build` page-data collection from throwing when env is
+// absent (CI/sandbox); real values are always present at runtime on Vercel.
+const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_KEY || 'placeholder')
 
 const CAT = {
   graphic:'🎨', video:'🎬', photo:'📷', marketing:'📢', ai:'🤖', branding:'✨', pos:'🏪', other:'📌',

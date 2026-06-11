@@ -82,10 +82,12 @@ export default function SocialDashboard() {
         </div>
         <nav className="si-nav">
           {NAV.map((n) => (
-            <div key={n.key} className={`si-nav-item ${n.live ? 'active' : 'soon'}`}>
+            <div key={n.key}
+              className={`si-nav-item ${n.live ? 'active' : n.key === 'pages' ? 'link' : 'soon'}`}
+              onClick={n.key === 'pages' ? () => router.push('/social/import') : undefined}>
               <span className="si-nav-icon">{n.icon}</span>
               <span>{n.label}</span>
-              {!n.live && <span className="si-soon">เร็วๆ นี้</span>}
+              {!n.live && n.key !== 'pages' && <span className="si-soon">เร็วๆ นี้</span>}
             </div>
           ))}
         </nav>
@@ -101,9 +103,10 @@ export default function SocialDashboard() {
             <h1 className="si-title">Executive Dashboard</h1>
             <p className="si-subtitle">ภาพรวมการวิเคราะห์เพจสาธารณะ · ข้อมูลตัวอย่าง (Demo)</p>
           </div>
-          <a className="si-banner" href="/docs/social-insight-ai" onClick={(e) => e.preventDefault()}>
-            🔒 ใช้เฉพาะข้อมูลสาธารณะ · ไม่ต้องเป็นแอดมินเพจ
-          </a>
+          <div className="si-header-actions">
+            <span className="si-banner">🔒 ใช้เฉพาะข้อมูลสาธารณะ · ไม่ต้องเป็นแอดมินเพจ</span>
+            <button className="si-import-btn" onClick={() => router.push('/social/import')}>+ นำเข้าข้อมูล</button>
+          </div>
         </header>
 
         {state === 'loading' && <div className="si-state">⏳ กำลังโหลดข้อมูล...</div>}
@@ -222,6 +225,10 @@ const CSS = `
   .si-nav-item.active { background:#eff4ff; color:#2563EB; font-weight:700; }
   .si-nav-item.soon { color:#94a3b8; cursor:default; }
   .si-nav-item.soon:hover { background:#f8fafc; }
+  .si-nav-item.link { color:#475569; cursor:pointer; }
+  .si-nav-item.link:hover { background:#f1f5f9; }
+  .si-header-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .si-import-btn { background:#2563EB; color:#fff; border:none; border-radius:10px; padding:9px 16px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; box-shadow:0 4px 14px rgba(37,99,235,.3); }
   .si-nav-icon { font-size:15px; width:18px; text-align:center; }
   .si-soon { margin-left:auto; font-size:9.5px; background:#f1f5f9; color:#94a3b8; padding:2px 6px; border-radius:6px; font-weight:600; }
   .si-signout { margin-top:12px; padding:10px; border:1px solid #eef2f7; background:#fff; border-radius:10px; font-size:13px; color:#64748b; cursor:pointer; font-family:inherit; font-weight:600; }

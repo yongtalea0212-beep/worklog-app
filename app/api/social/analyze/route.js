@@ -58,10 +58,15 @@ export async function POST(request) {
   }
 }
 
-export async function GET(request) {
+function cronAuthed(request) {
   const secret = process.env.CRON_SECRET || ''
-  if (secret && request.headers.get('x-cron-secret') !== secret)
-    return Response.json({ error: 'forbidden' }, { status: 403 })
+  if (!secret) return true // unset → allow (dev)
+  const h = request.headers
+  return h.get('x-cron-secret') === secret || h.get('authorization') === `Bearer ${secret}`
+}
+
+export async function GET(request) {
+  if (!cronAuthed(request)) return Response.json({ error: 'forbidden' }, { status: 403 })
   try {
     const result = await analyzeBatch(admin())
     return Response.json({ ok: true, ...result })

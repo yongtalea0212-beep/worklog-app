@@ -23,6 +23,13 @@ const NAV = [
   { key: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
+const NAV_ROUTES = {
+  pages: '/social/import',
+  posts: '/social/posts',
+  comments: '/social/comments',
+  settings: '/social/settings',
+}
+
 const BLUE = '#2563EB'
 const SENT_COLORS = { Positive: '#16a34a', Neutral: '#94a3b8', Negative: '#dc2626' }
 
@@ -81,15 +88,19 @@ export default function SocialDashboard() {
           </div>
         </div>
         <nav className="si-nav">
-          {NAV.map((n) => (
-            <div key={n.key}
-              className={`si-nav-item ${n.live ? 'active' : n.key === 'pages' ? 'link' : 'soon'}`}
-              onClick={n.key === 'pages' ? () => router.push('/social/import') : undefined}>
-              <span className="si-nav-icon">{n.icon}</span>
-              <span>{n.label}</span>
-              {!n.live && n.key !== 'pages' && <span className="si-soon">เร็วๆ นี้</span>}
-            </div>
-          ))}
+          {NAV.map((n) => {
+            const href = NAV_ROUTES[n.key]
+            const clickable = n.live || href
+            return (
+              <div key={n.key}
+                className={`si-nav-item ${n.live ? 'active' : clickable ? 'link' : 'soon'}`}
+                onClick={href ? () => router.push(href) : undefined}>
+                <span className="si-nav-icon">{n.icon}</span>
+                <span>{n.label}</span>
+                {!clickable && <span className="si-soon">เร็วๆ นี้</span>}
+              </div>
+            )
+          })}
         </nav>
         <button className="si-signout" onClick={async () => { await supabase.auth.signOut(); router.replace('/login') }}>
           ออกจากระบบ

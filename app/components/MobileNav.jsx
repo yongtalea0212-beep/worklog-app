@@ -10,6 +10,7 @@ const PRIMARY = [
   { id: 'dashboard', icon: '▦', label: 'หน้าหลัก' },
   { id: 'logs',      icon: '≡', label: 'งาน' },
   { id: '_fab',      icon: '+', label: '' },
+  { id: 'marketing', img: '/mascot-face.png', label: 'Marketing', external: '/social' },
   { id: 'calendar',  icon: '📅', label: 'ปฏิทิน' },
   { id: '_menu',     icon: '☰', label: 'เมนู' },
 ]
@@ -27,6 +28,7 @@ export default function MobileNav({ currentPage, onNavigate, logCount = 0, navIt
   function go(id) {
     if (id === '_menu') { setDrawerOpen(true); return }
     if (id === '_fab') { onNavigate?.('log'); return }
+    if (id === 'marketing') { window.location.href = '/social'; return }  // separate route
     onNavigate?.(id)
   }
 
@@ -53,7 +55,7 @@ export default function MobileNav({ currentPage, onNavigate, logCount = 0, navIt
           return (
             <button key={item.id} className={'mnav-tab' + (isActive ? ' on' : '')} onClick={() => go(item.id)}
               aria-current={isActive ? 'page' : undefined} aria-haspopup={isMenu ? 'menu' : undefined} aria-expanded={isMenu ? drawerOpen : undefined}>
-              <span className="mnav-ic">{item.icon}</span>
+              <span className="mnav-ic">{item.img ? <img className="mnav-logo" src={item.img} alt="" /> : item.icon}</span>
               <span>{item.label}</span>
               {item.id === 'logs' && logCount > 0 && <span className="mnav-badge">{logCount > 99 ? '99+' : logCount}</span>}
             </button>
@@ -87,6 +89,12 @@ export default function MobileNav({ currentPage, onNavigate, logCount = 0, navIt
                   </button>
                 )
               })}
+
+              {/* Social Insight AI lives on a separate route */}
+              <button role="menuitem" className="mnav-item" onClick={() => { setDrawerOpen(false); window.location.href = '/social' }}>
+                <span className="mnav-item-ic"><img className="mnav-logo" src="/mascot-face.png" alt="" /></span>
+                <span className="mnav-item-label">Marketing</span>
+              </button>
             </div>
 
             {onLogout && (
@@ -111,6 +119,8 @@ const NAV_CSS = `
 .mnav-tab.on{color:#6C63FF;font-weight:700;background:rgba(108,99,255,.08);border-radius:10px}
 .mnav-tab:focus-visible{outline:2px solid #6C63FF;outline-offset:2px;border-radius:10px}
 .mnav-ic{font-size:20px;line-height:1.2}
+.mnav-logo{width:24px;height:24px;object-fit:contain;border-radius:7px;display:block}
+.mnav-tab .mnav-item-ic .mnav-logo,.mnav-item .mnav-logo{width:22px;height:22px}
 .mnav-badge{position:absolute;top:0;right:6px;background:#6C63FF;color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:1px 5px;border:1.5px solid #fff}
 .mnav-fab{width:52px;height:52px;border-radius:16px;margin-top:-20px;flex-shrink:0;border:none;cursor:pointer;
   background:linear-gradient(135deg,#6C63FF,#9B8FFF);color:#fff;font-size:26px;

@@ -22,6 +22,28 @@ const CATS = [
 
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 
+// Custom FullCalendar event body — a colored block with category icon + time +
+// title so every task is identifiable at a glance (month view especially).
+function renderEventContent(arg) {
+  const cat = getCat(arg.event.extendedProps?.category || 'other')
+  const isMonth = arg.view.type === 'dayGridMonth'
+  if (isMonth) {
+    return (
+      <div className="fc-evm" title={arg.event.title}>
+        <span className="fc-evm-ic">{cat.icon}</span>
+        {arg.timeText ? <span className="fc-evm-tm">{arg.timeText}</span> : null}
+        <span className="fc-evm-tt">{arg.event.title}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="fc-evt" title={arg.event.title}>
+      {arg.timeText ? <div className="fc-evt-tm">{arg.timeText}</div> : null}
+      <div className="fc-evt-tt">{cat.icon} {arg.event.title}</div>
+    </div>
+  )
+}
+
 const fmtDate = s => {
   try { return new Date(s).toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' }) }
   catch { return s || '' }
@@ -194,6 +216,18 @@ const CAL_CSS = `
 @keyframes ts-drawer { from{transform:translateX(100%)} to{transform:translateX(0)} }
 @keyframes ts-sheet  { from{transform:translateY(100%)} to{transform:translateY(0)} }
 @keyframes ts-fade   { from{opacity:0} to{opacity:1} }
+/* Custom event body — readable colored blocks (§ month-view clarity) */
+.fc .fc-daygrid-event { padding: 2px 6px !important; margin: 1px 2px 2px !important; border-radius: 7px !important; }
+.fc .fc-daygrid-event .fc-event-time { display: none !important; } /* time shown inside fc-evm instead */
+.fc-evm { display: flex; align-items: center; gap: 4px; overflow: hidden; line-height: 1.3; }
+.fc-evm-ic { font-size: 10px; flex-shrink: 0; }
+.fc-evm-tm { font-size: 9.5px; font-weight: 800; flex-shrink: 0; opacity: .95; letter-spacing: -.2px; }
+.fc-evm-tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; }
+.fc-evt { overflow: hidden; }
+.fc-evt-tm { font-size: 10px; font-weight: 800; opacity: .9; }
+.fc-evt-tt { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* keep 3 rows readable on mobile month cells */
+.fc .fc-daygrid-day-frame { min-height: 92px; }
 `
 
 // ─────────────────────────────────────────
@@ -1007,6 +1041,9 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
             locale="th"
             headerToolbar={{ left:'prev,next today', center:'title', right:'' }}
             events={events}
+            eventDisplay="block"
+            eventContent={renderEventContent}
+            displayEventTime={true}
             eventClick={handleEventClick}
             dateClick={handleDateClick}
             editable={true}

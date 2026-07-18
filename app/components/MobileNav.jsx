@@ -10,7 +10,6 @@ const PRIMARY = [
   { id: 'dashboard', icon: '▦', label: 'หน้าหลัก' },
   { id: 'logs',      icon: '≡', label: 'งาน' },
   { id: '_fab',      icon: '+', label: '' },
-  { id: 'marketing', img: '/mascot-face.png', label: 'Marketing', external: '/social' },
   { id: 'calendar',  icon: '📅', label: 'ปฏิทิน' },
   { id: '_menu',     icon: '☰', label: 'เมนู' },
 ]
@@ -28,7 +27,6 @@ export default function MobileNav({ currentPage, onNavigate, logCount = 0, navIt
   function go(id) {
     if (id === '_menu') { setDrawerOpen(true); return }
     if (id === '_fab') { onNavigate?.('log'); return }
-    if (id === 'marketing') { window.location.href = '/social'; return }  // separate route
     onNavigate?.(id)
   }
 

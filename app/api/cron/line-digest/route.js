@@ -212,7 +212,7 @@ function weeklyCard(stats, ai) {
             contents:[{ type:'image', url:MASCOT_HAPPY, size:'38px', aspectMode:'cover' }] },
           { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📈 สรุปสัปดาห์นี้', size:'lg', weight:'bold', color:'#FFFFFF' },
-            { type:'text', text:'WorkLog AI · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },
+            { type:'text', text:'StayScape · ทบทวนก่อนสุดสัปดาห์', size:'xs', color:'#E8E0FF', margin:'xs' },
           ] },
           { type:'box', layout:'vertical', flex:0, justifyContent:'center', cornerRadius:'20px',
             paddingAll:'6px', paddingStart:'14px', paddingEnd:'14px', backgroundColor:'#FFFFFF',
@@ -318,7 +318,7 @@ async function run(type) {
         text: `${CAT[r.category] || '📌'} ${r.title || 'งาน'}`,
       }))
       if (unscheduled) lines.push({ time:'📥', text:`อีก ${unscheduled} งานยังไม่จัดเวลา — กด "🤖 จัดตารางให้" ในแอป`, color:'#F59E0B' })
-      card = digestCard('☀️ แผนงานวันนี้', new Date().toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long' }),
+      card = digestCard('☀️ แผนงานวันนี้', new Date().toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', weekday:'long', day:'numeric', month:'long' }),
         lines, '🌐 เปิดปฏิทิน')
 
     } else { // pending (evening) — confirm carousel

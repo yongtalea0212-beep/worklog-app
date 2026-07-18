@@ -1,4 +1,4 @@
-// app/api/line/webhook/route.js — WorkLog AI LINE Bot v3.1
+// app/api/line/webhook/route.js — StayScape LINE Bot v3.1
 // Premium Flex Cards + Quick Reply + Postback Actions
 // AI Command Center · PDF→Task · AI Inbox (vision) · report delivery
 
@@ -20,7 +20,7 @@ const MASCOT_HERO_WAVE = APP_URL + '/mascot-hero-wave.png?v=2'
 // absent (CI/sandbox); real values are always present at runtime on Vercel.
 const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_KEY || 'placeholder')
 
-// WorkLog AI Brand Colors
+// StayScape Brand Colors
 const BRAND = {
   purple:     '#6C63FF',
   purpleLight:'#9B8FFF',
@@ -49,12 +49,26 @@ const CAT = {
 }
 
 // ─────────────────────────────────────────
-// SESSION (in-memory — Vercel serverless)
+// SESSION — persisted in Supabase (line_sessions). In-memory Maps don't
+// survive across Vercel serverless invocations, so multi-step edit flows
+// (prompt in one request, the typed reply in the next) lost their state and
+// fell through to "create new task". A small table fixes that.
 // ─────────────────────────────────────────
-const sessions = new Map()
-function getSession(uid) { return sessions.get(uid) || { state:'idle', data:{} } }
-function setSession(uid, state, data={}) { sessions.set(uid, { state, data, t:Date.now() }) }
-function clearSession(uid) { sessions.delete(uid) }
+const SESSION_TTL_MS = 15 * 60 * 1000
+async function getSession(uid) {
+  try {
+    const { data } = await supabase.from('line_sessions').select('state,data,updated_at').eq('line_user_id', uid).single()
+    if (!data) return { state:'idle', data:{} }
+    if (data.updated_at && Date.now() - new Date(data.updated_at).getTime() > SESSION_TTL_MS) return { state:'idle', data:{} }
+    return { state: data.state || 'idle', data: data.data || {} }
+  } catch { return { state:'idle', data:{} } }
+}
+async function setSession(uid, state, data={}) {
+  try { await supabase.from('line_sessions').upsert({ line_user_id: uid, state, data, updated_at: new Date().toISOString() }) } catch {}
+}
+async function clearSession(uid) {
+  try { await supabase.from('line_sessions').delete().eq('line_user_id', uid) } catch {}
+}
 
 // ─────────────────────────────────────────
 // DATE/TIME (Asia/Bangkok, UTC+7)
@@ -67,8 +81,38 @@ function bkkISO(dateStr, hhmm) {
   return isNaN(t) ? null : t.toISOString()
 }
 function fmtThaiDate(dateStr) {
-  try { return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short' }) }
+  try { return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', day:'numeric', month:'short' }) }
   catch { return dateStr }
+}
+// HH:MM (Bangkok) from a stored ISO timestamp.
+function hmBKK(iso) {
+  if (!iso) return ''
+  const d = new Date(new Date(iso).getTime() + 7 * 3600000)
+  return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
+}
+// Parse "14:00-15:30" / "14:00 15:30" / "14:00" → { start, end|null }, else null.
+function parseTimeRange(text) {
+  const t = (text || '').trim()
+  let m = t.match(/(\d{1,2}:\d{2})\s*[-–—to]+\s*(\d{1,2}:\d{2})/)
+  if (m) return { start: m[1], end: m[2] }
+  m = t.match(/^(\d{1,2}:\d{2})$/)
+  if (m) return { start: m[1], end: null }
+  return null
+}
+// Parse a due-date input → 'YYYY-MM-DD', '' to clear, or null if unparseable.
+function parseDateInput(text) {
+  const t = (text || '').trim().toLowerCase()
+  if (/^(ลบ|clear|none|-|ไม่มี)$/.test(t)) return ''
+  const today = bkkToday()
+  const addDays = (n) => { const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().split('T')[0] }
+  if (/วันนี้|today/.test(t)) return today
+  if (/พรุ่งนี้|tomorrow/.test(t)) return addDays(1)
+  if (/มะรืน/.test(t)) return addDays(2)
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`
+  m = t.match(/^(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?$/)
+  if (m) { let y = m[3] ? +m[3] : +today.slice(0,4); if (y < 100) y += 2000; return `${y}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}` }
+  return null
 }
 
 // ─────────────────────────────────────────
@@ -111,6 +155,19 @@ async function pushLINE(userId, messages) {
   } catch(e) { console.error('[PUSH]', e); return false }
 }
 
+// Show the "…" loading animation in a 1:1 chat while we work (auto-dismissed
+// when the next message is sent). loadingSeconds must be 5–60 (multiple of 5).
+async function startLoading(userId, seconds = 10) {
+  if (!LINE_TOKEN || !userId) return
+  try {
+    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+LINE_TOKEN },
+      body: JSON.stringify({ chatId: userId, loadingSeconds: seconds }),
+    })
+  } catch {}
+}
+
 async function getContent(msgId) {
   if (!LINE_TOKEN) return null
   try {
@@ -139,7 +196,7 @@ async function saveWorklog(uid, d) {
     const row = {
       line_user_id:uid, title:d.title||'งานจาก LINE', description:d.desc||'',
       ai_summary:d.summary||'', category:d.category||'other', hours_spent:d.hours||1,
-      status:d.status||'done', tags:d.tags||[], date:d.date||new Date().toISOString().split('T')[0],
+      status:d.status||'done', tags:d.tags||[], date:d.date||bkkToday(),
       image_urls:d.images||[], source:d.source||'line',
     }
     // Scheduling fields are only written when the capture actually detected them,
@@ -163,6 +220,12 @@ async function updateWorklog(id, d) {
   if (d.hours!==undefined)    update.hours_spent=d.hours
   if (d.tags!==undefined)     update.tags=d.tags
   if (d.images!==undefined)   update.image_urls=d.images
+  if (d.status!==undefined)   update.status=d.status
+  if (d.start_at!==undefined) update.start_at=d.start_at
+  if (d.end_at!==undefined)   update.end_at=d.end_at
+  if (d.due_date!==undefined) update.due_date=d.due_date
+  if (d.workdate!==undefined) update.date=d.workdate
+  if (d.priority!==undefined) update.priority=d.priority
   const {error}=await supabase.from('work_logs').update(update).eq('id',id)
   return !error
 }
@@ -172,8 +235,13 @@ async function getWorklog(id) {
   return data
 }
 
+async function deleteWorklog(id) {
+  const {error}=await supabase.from('work_logs').delete().eq('id',id)
+  return !error
+}
+
 async function getTodayLogs(uid) {
-  const today=new Date().toISOString().split('T')[0]
+  const today=bkkToday()
   const {data}=await supabase.from('work_logs').select('id,title,category,hours_spent,date')
     .eq('line_user_id',uid).eq('date',today).limit(20)
   return data||[]
@@ -223,7 +291,7 @@ async function analyze(title, desc) {
 }
 
 // ─────────────────────────────────────────
-// FLEX MESSAGE BUILDERS — WorkLog AI Style
+// FLEX MESSAGE BUILDERS — StayScape Style
 // ─────────────────────────────────────────
 
 // 1. Image received card with Quick Reply
@@ -429,7 +497,7 @@ function msgWorklogSaved(d, saved) {
           }] : []),
 
           // Date
-          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH'), size:'xs', color:BRAND.textMuted },
+          { type:'text', text:'📅 '+new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'}), size:'xs', color:BRAND.textMuted },
         ]
       },
 
@@ -456,7 +524,7 @@ function msgWorklogSaved(d, saved) {
           {
             type: 'button', style: 'primary', height: 'sm',
             color: BRAND.purple,
-            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
+            action: { type:'uri', label:'🌐 ดูใน StayScape', uri: APP_URL },
           },
         ]
       },
@@ -470,73 +538,93 @@ function msgWorklogSaved(d, saved) {
 }
 
 // 3. Edit menu card
-function msgEditMenu(log) {
-  const cat = CAT[log.category||'other']||CAT.other
+// Rich task card — shown after create and after every edit. Has an image hero
+// (when present) plus inline edit buttons so the whole task can be managed in LINE.
+function msgTaskCard(log) {
+  if (!log) return [{ type:'text', text:'ไม่พบงานนี้ครับ' }]
+  const cat = CAT[log.category||'other'] || CAT.other
+  const id  = log.id || ''
+  const img = (log.image_urls || [])[0]
+  const tags = (log.tags || []).slice(0,4)
+  const STATUS = {
+    done:        { e:'✅', l:'เสร็จแล้ว', c:BRAND.green },
+    in_progress: { e:'🔄', l:'กำลังทำ',   c:BRAND.amber },
+    draft:       { e:'📝', l:'ร่าง',       c:BRAND.purple },
+  }
+  const st = STATUS[log.status] || STATUS.draft
+  const timeStr = log.start_at ? `${hmBKK(log.start_at)}${log.end_at ? '–' + hmBKK(log.end_at) : ''}` : 'ยังไม่จัดเวลา'
+  const row = (label, value, color) => ({
+    type:'box', layout:'horizontal', contents:[
+      { type:'text', text:label, size:'xs', color:BRAND.textMuted, flex:0 },
+      { type:'text', text:value, size:'xs', color:color||BRAND.text, weight:'bold', flex:1, align:'end', wrap:true },
+    ]
+  })
+  const sep = { type:'separator', color:'#F0EEFF' }
+  const editBtn = (label, cmd) => ({
+    type:'button', style:'secondary', height:'sm', flex:1, color:'#EDEAFF',
+    action:{ type:'message', label, text:`${cmd} ${id}` },
+  })
   return [{
-    type:'flex',
-    altText:'✏️ แก้ไขงาน: '+log.title,
+    type:'flex', altText:'📝 ' + (log.title || 'งาน'),
     contents:{
       type:'bubble', size:'mega',
-      header:{
-        type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:cat.bg,
+      ...(img ? { hero:{ type:'image', url:img, size:'full', aspectRatio:'20:11', aspectMode:'cover', action:{ type:'uri', uri:APP_URL } } } : {}),
+      header:{ type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:cat.bg,
         contents:[
-          { type:'text', text:'✏️ แก้ไขงาน', weight:'bold', size:'md', color:cat.color },
-          { type:'text', text:log.title||'', size:'sm', color:BRAND.textSub, wrap:true, margin:'xs' },
+          { type:'box', layout:'horizontal', contents:[
+            { type:'text', text:cat.emoji+' '+cat.label, size:'xs', color:cat.color, weight:'bold', flex:1, gravity:'center' },
+            { type:'box', layout:'vertical', flex:0, cornerRadius:'20px', paddingAll:'3px', paddingStart:'10px', paddingEnd:'10px', backgroundColor:st.c+'22',
+              contents:[{ type:'text', text:st.e+' '+st.l, size:'xxs', color:st.c, weight:'bold' }] },
+          ]},
+          { type:'text', text:log.title||'งาน', weight:'bold', size:'lg', color:BRAND.text, wrap:true, margin:'sm' },
         ]
       },
-      body:{
-        type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm',
-        backgroundColor:BRAND.cardBg,
+      body:{ type:'box', layout:'vertical', paddingAll:'16px', spacing:'md', backgroundColor:BRAND.cardBg,
         contents:[
-          // Current info
-          {
-            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'12px',
-            backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
+          { type:'box', layout:'vertical', cornerRadius:'12px', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.white, borderColor:'#E8E0FF', borderWidth:'1px',
             contents:[
-              { type:'box', layout:'horizontal', contents:[
-                { type:'text', text:'⏱ เวลา', size:'xs', color:BRAND.textMuted, flex:1 },
-                { type:'text', text:String(log.hours_spent||1)+' ชม.', size:'xs', weight:'bold', color:BRAND.purple, flex:0 },
-              ]},
-              { type:'separator', margin:'sm' },
-              { type:'box', layout:'horizontal', margin:'sm', contents:[
-                { type:'text', text:'📂 หมวด', size:'xs', color:BRAND.textMuted, flex:1 },
-                { type:'text', text:cat.emoji+' '+cat.label, size:'xs', weight:'bold', color:cat.color, flex:0 },
-              ]},
-              ...(log.ai_summary ? [
-                { type:'separator', margin:'sm' },
-                { type:'text', text:log.ai_summary, size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' },
-              ] : []),
-            ]
-          }
-        ]
-      },
-      footer:{
-        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm',
-        backgroundColor:BRAND.cardBg,
-        contents:[
-          {
-            type:'box', layout:'horizontal', spacing:'sm',
-            contents:[
-              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
-                action:{ type:'message', label:'📝 ชื่องาน', text:'/edit-title '+log.id } },
-              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
-                action:{ type:'message', label:'📄 รายละเอียด', text:'/edit-desc '+log.id } },
+              row('🕐 เวลา', timeStr, log.start_at ? BRAND.purple : BRAND.textMuted), sep,
+              row('⏱ ชั่วโมง', (log.hours_spent||1)+' ชม.', BRAND.cyan), sep,
+              row('📅 วันที่', fmtThaiDate(log.date), BRAND.text), sep,
+              row('⏳ กำหนดส่ง', log.due_date ? fmtThaiDate(log.due_date) : '—', log.due_date ? BRAND.red : BRAND.textMuted),
             ]
           },
-          {
-            type:'box', layout:'horizontal', spacing:'sm',
+          ...(log.ai_summary ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'10px', backgroundColor:BRAND.purpleBg,
             contents:[
-              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
-                action:{ type:'message', label:'⏱ เวลา', text:'/edit-hours '+log.id } },
-              { type:'button', style:'secondary', height:'sm', flex:1, color:'#E8E0FF',
-                action:{ type:'message', label:'📂 หมวด', text:'/edit-cat '+log.id } },
+              { type:'text', text:'✨ AI Summary', size:'xxs', color:BRAND.purple, weight:'bold' },
+              { type:'text', text:log.ai_summary, size:'xs', color:BRAND.textSub, wrap:true, margin:'xs' },
             ]
-          },
-          { type:'button', style:'primary', height:'sm', color:BRAND.purple,
-            action:{ type:'uri', label:'🌐 แก้ไขในแอป', uri:APP_URL } },
+          }] : []),
+          ...(tags.length ? [{
+            type:'box', layout:'horizontal', spacing:'xs',
+            contents: tags.map(t => ({
+              type:'box', layout:'vertical', cornerRadius:'20px', paddingAll:'3px', paddingStart:'8px', paddingEnd:'8px', backgroundColor:cat.bg,
+              contents:[{ type:'text', text:'#'+t, size:'xxs', color:cat.color, weight:'bold' }]
+            }))
+          }] : []),
         ]
       },
-      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+      footer:{ type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+        contents:[
+          { type:'text', text:'✏️ แก้ไขผ่าน LINE', size:'xxs', color:BRAND.textMuted, align:'center' },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📝 ชื่อ','/edit-title'), editBtn('📄 รายละเอียด','/edit-desc') ] },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📆 วันที่','/edit-date'), editBtn('🕐 เวลา','/edit-time') ] },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📅 กำหนดส่ง','/edit-due'), editBtn('⏱ ชั่วโมง','/edit-hours') ] },
+          { type:'box', layout:'horizontal', spacing:'sm', contents:[ editBtn('📂 หมวดหมู่','/edit-cat'), editBtn('📸 เพิ่มรูป','/addimage') ] },
+          { type:'text', text:'สถานะงาน', size:'xxs', color:BRAND.textMuted, align:'center', margin:'sm' },
+          { type:'box', layout:'horizontal', spacing:'sm', contents: ['done','in_progress','draft'].map(s => ({
+            type:'button', height:'sm', flex:1,
+            style: log.status===s ? 'primary' : 'secondary',
+            color: log.status===s ? STATUS[s].c : '#EDEAFF',
+            action:{ type:'postback', label: (s==='done'?'เสร็จ':s==='in_progress'?'ทำอยู่':'ร่าง'), data:'action=status&logId='+id+'&status='+s },
+          })) },
+          { type:'button', style:'secondary', height:'sm', color:'#FFE0E0',
+            action:{ type:'postback', label:'🗑 ลบงาน', data:'action=delete_ask&logId='+id } },
+          { type:'button', style:'primary', height:'sm', color:BRAND.purple, action:{ type:'uri', label:'🌐 เปิดในแอป', uri:APP_URL } },
+        ]
+      },
+      styles:{ header:{ separator:false }, footer:{ separator:true, separatorColor:'#E8E0FF' } }
     }
   }]
 }
@@ -567,8 +655,8 @@ function msgToday(logs, date) {
           { type:'text', text:h+'h', size:'xs', weight:'bold', color:cat.color, flex:0 },
         ]},
         { type:'box', layout:'horizontal', margin:'xs', contents:[
-          { type:'box', layout:'vertical', flex:pct, height:'4px', backgroundColor:cat.color, cornerRadius:'2px' },
-          ...(pct<100?[{ type:'box', layout:'vertical', flex:100-pct, height:'4px', backgroundColor:'#E8E0FF', cornerRadius:'2px' }]:[]),
+          { type:'box', layout:'vertical', flex:Math.max(pct,1), height:'4px', backgroundColor:cat.color, cornerRadius:'2px', contents:[{ type:'filler' }] },
+          ...(pct<100?[{ type:'box', layout:'vertical', flex:100-pct, height:'4px', backgroundColor:'#E8E0FF', cornerRadius:'2px', contents:[{ type:'filler' }] }]:[]),
         ]}
       ]
     }
@@ -716,10 +804,10 @@ function msgStatusUpdate(log, trigger) {
     completed:     '🎉 งานเสร็จแล้ว',
   }
   const st = STATUS[log.status] || STATUS.draft
-  const triggerLabel = TRIGGERS[trigger] || '📋 WorkLog AI'
+  const triggerLabel = TRIGGERS[trigger] || '📋 StayScape'
   const dateStr = log.date
     ? new Date(log.date).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
-    : new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
+    : new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short',year:'2-digit'})
   const logId = log.id || ''
 
   return [{
@@ -806,7 +894,7 @@ function msgStatusUpdate(log, trigger) {
           },
           {
             type: 'button', style: 'primary', height: 'sm', color: BRAND.purple,
-            action: { type:'uri', label:'🌐 ดูใน WorkLog AI', uri: APP_URL },
+            action: { type:'uri', label:'🌐 ดูใน StayScape', uri: APP_URL },
           },
         ]
       },
@@ -841,7 +929,7 @@ async function getMonthLogsFull(uid) {
   return data || []
 }
 async function getDoneToday(uid) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = bkkToday()
   const { data } = await supabase.from('work_logs').select(SEL)
     .eq('line_user_id', uid).eq('date', today).eq('status', 'done').limit(30)
   return data || []
@@ -899,8 +987,8 @@ function computeDashboard(monthLogs) {
 // ─────────────────────────────────────────
 async function understand(text) {
   const today = bkkToday()
-  const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { weekday:'long' })
-  const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "WorkLog AI" ตอบ JSON เท่านั้น ห้าม markdown
+  const dow = new Date(`${today}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok', weekday:'long' })
+  const p = `คุณเป็นตัวแยกเจตนา (intent) ของผู้ใช้แอปบันทึกงาน "StayScape" ตอบ JSON เท่านั้น ห้าม markdown
 วันนี้คือ ${today} (${dow}) เขตเวลาไทย — ใช้อ้างอิงเมื่อผู้ใช้พูดถึงวัน/เวลา เช่น "พรุ่งนี้" "บ่าย 2" "ศุกร์นี้"
 ข้อความผู้ใช้: "${text}"
 หมวดงาน: graphic|video|photo|marketing|ai|branding|pos|other
@@ -1266,56 +1354,27 @@ function btn(label, data, color, style='secondary') {
 }
 
 // Compact "new task created" popup card (§6)
-function msgCompactCreated(d, saved) {
-  const cat = CAT[d.category] || CAT.other
-  const logId = saved?.id || ''
-  const isTodo = d.status && d.status !== 'done'
-  const headLabel = isTodo ? '🗓️ เพิ่มงานที่ต้องทำ' : '✅ บันทึกงานแล้ว'
-  const headColor = isTodo ? BRAND.purple : BRAND.green
-  // Schedule line: prefer a start time, else a deadline, else the date.
-  let when = '📅 ' + fmtThaiDate(d.date || bkkToday())
-  if (d.start_at) {
-    const s = new Date(new Date(d.start_at).getTime() + 7*3600000)
-    const e = d.end_at ? new Date(new Date(d.end_at).getTime() + 7*3600000) : null
-    const hhmm = x => `${String(x.getUTCHours()).padStart(2,'0')}:${String(x.getUTCMinutes()).padStart(2,'0')}`
-    when = `🕐 ${fmtThaiDate(d.date)} ${hhmm(s)}${e ? '–' + hhmm(e) : ''}`
-  } else if (d.due_date) {
-    when = '⏳ ส่ง ' + fmtThaiDate(d.due_date)
-  }
+// Delete confirmation card — guards against accidental deletes.
+function msgDeleteConfirm(log) {
+  if (!log) return [{ type:'text', text:'ไม่พบงานนี้ครับ' }]
   return [{
-    type:'flex', altText:headLabel+': '+d.title,
+    type:'flex', altText:'ยืนยันลบงาน: ' + (log.title||''),
     contents:{
       type:'bubble', size:'kilo',
-      header:{
-        type:'box', layout:'horizontal', paddingAll:'14px', spacing:'md', backgroundColor:cat.bg,
+      body:{ type:'box', layout:'vertical', paddingAll:'18px', spacing:'sm', backgroundColor:'#FFF8F8',
         contents:[
-          { type:'image', url:MASCOT_FACE, size:'48px', aspectMode:'cover', flex:0, gravity:'top' },
-          { type:'box', layout:'vertical', flex:1, contents:[
-            { type:'box', layout:'horizontal', contents:[
-              { type:'text', text:headLabel, size:'xs', weight:'bold', color:headColor, flex:1 },
-              { type:'text', text:cat.emoji+' '+cat.label, size:'xxs', color:cat.color, flex:0, align:'end', gravity:'center' },
-            ]},
-            { type:'text', text:d.title, weight:'bold', size:'md', color:BRAND.text, wrap:true, margin:'sm' },
-          ]},
-        ]
-      },
-      body:{
-        type:'box', layout:'horizontal', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
+          { type:'text', text:'🗑 ลบงานนี้?', weight:'bold', size:'md', color:BRAND.red },
+          { type:'text', text: log.title||'งาน', size:'sm', color:BRAND.text, wrap:true, margin:'sm' },
+          { type:'text', text:'การลบไม่สามารถย้อนกลับได้', size:'xs', color:BRAND.textMuted, margin:'sm' },
+        ] },
+      footer:{ type:'box', layout:'horizontal', paddingAll:'12px', spacing:'sm', backgroundColor:'#FFF8F8',
         contents:[
-          { type:'text', text:'⏱ '+(d.hours||1)+' ชม.', size:'xs', color:BRAND.textSub, flex:0 },
-          { type:'text', text:when, size:'xs', color: (d.due_date||d.start_at) ? BRAND.purple : BRAND.textSub, weight:(d.due_date||d.start_at)?'bold':'regular', flex:1, align:'end', wrap:true },
-        ]
-      },
-      footer:{
-        type:'box', layout:'vertical', paddingAll:'12px', spacing:'sm', backgroundColor:BRAND.cardBg,
-        contents:[
-          { type:'box', layout:'horizontal', spacing:'sm', contents:[
-            btn('🤖 AI วิเคราะห์', { postback:'action=analyze&logId='+logId }, '#E8E0FF'),
-            btn('🌐 เปิดงาน', { uri:APP_URL }, BRAND.purple, 'primary'),
-          ]},
-        ]
-      },
-      styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
+          { type:'button', style:'secondary', height:'sm', flex:1, color:'#EDEAFF',
+            action:{ type:'message', label:'↩️ ยกเลิก', text:'/edit '+log.id } },
+          { type:'button', style:'primary', height:'sm', flex:1, color:BRAND.red,
+            action:{ type:'postback', label:'✅ ลบเลย', data:'action=delete&logId='+log.id } },
+        ] },
+      styles:{ footer:{ separator:true, separatorColor:'#FFE0E0' } }
     }
   }]
 }
@@ -1333,14 +1392,14 @@ function msgWelcome() {
     ]
   })
   return [{
-    type:'flex', altText:'👋 ยินดีต้อนรับสู่ WorkLog AI — ผู้ช่วยจัดการงานผ่าน LINE',
+    type:'flex', altText:'👋 ยินดีต้อนรับสู่ StayScape — ผู้ช่วยจัดการงานผ่าน LINE',
     contents:{
       type:'bubble', size:'mega',
       hero:{ type:'image', url:MASCOT_HERO_WAVE, size:'full', aspectRatio:'20:11', aspectMode:'cover', backgroundColor:BRAND.purple },
       body:{
         type:'box', layout:'vertical', paddingAll:'18px', spacing:'none', backgroundColor:BRAND.cardBg,
         contents:[
-          { type:'text', text:'WorkLog AI', size:'xl', weight:'bold', color:BRAND.purple },
+          { type:'text', text:'StayScape', size:'xl', weight:'bold', color:BRAND.purple },
           { type:'text', text:'👋 สวัสดี! ผมเป็นผู้ช่วย AI จัดการงานของคุณผ่าน LINE', size:'sm', color:BRAND.textSub, margin:'sm', wrap:true },
           { type:'separator', margin:'lg', color:'#EDEAFF' },
           { type:'text', text:'ทำอะไรได้บ้าง', size:'xs', weight:'bold', color:BRAND.textMuted, margin:'lg' },
@@ -1359,7 +1418,7 @@ function msgWelcome() {
             btn('❓ วิธีใช้', { postback:'action=cmd&cmd=help' }, '#E8E0FF'),
           ]},
           { type:'button', style:'primary', height:'sm', color:BRAND.purple,
-            action:{ type:'uri', label:'🌐 เปิด WorkLog AI', uri:APP_URL } },
+            action:{ type:'uri', label:'🌐 เปิด StayScape', uri:APP_URL } },
         ]
       },
       styles:{ footer:{ separator:true, separatorColor:'#E8E0FF' } }
@@ -1422,7 +1481,7 @@ function msgDashboard(stats, projects) {
     ]
   })
   return [{
-    type:'flex', altText:'📊 แดชบอร์ด WorkLog AI',
+    type:'flex', altText:'📊 แดชบอร์ด StayScape',
     contents:{
       type:'bubble', size:'mega',
       header:{
@@ -1431,7 +1490,7 @@ function msgDashboard(stats, projects) {
           { type:'image', url:MASCOT_FACE, size:'46px', aspectMode:'cover', flex:0, gravity:'center' },
           { type:'box', layout:'vertical', flex:1, justifyContent:'center', contents:[
             { type:'text', text:'📊 แดชบอร์ด', weight:'bold', size:'lg', color:BRAND.purple },
-            { type:'text', text:new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
+            { type:'text', text:new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
           ]},
           { type:'box', layout:'vertical', flex:0, justifyContent:'center', cornerRadius:'20px', paddingAll:'6px', paddingStart:'14px', paddingEnd:'14px', backgroundColor:BRAND.purple,
             contents:[{ type:'text', text:stats.completion+'%', size:'md', weight:'bold', color:BRAND.white }] },
@@ -1630,11 +1689,11 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
     case 'today': {
       const logs = await getTodayLogs(uid)
       if (!logs.length) return replyLINE(token,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nพิมพ์บอกว่าทำงานอะไรเพื่อบันทึก!'}])
-      return replyLINE(token, msgToday(logs, new Date().toISOString().split('T')[0]))
+      return replyLINE(token, msgToday(logs, bkkToday()))
     }
     case 'done_today': {
       const logs = await getDoneToday(uid)
-      return replyLINE(token, msgTaskList('✅ งานเสร็จวันนี้', new Date().toLocaleDateString('th-TH'), logs, BRAND.green))
+      return replyLINE(token, msgTaskList('✅ งานเสร็จวันนี้', new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'}), logs, BRAND.green))
     }
     case 'week': {
       const logs = await getWeekLogs(uid)
@@ -1642,7 +1701,7 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
     }
     case 'month': {
       const logs = await getMonthLogsFull(uid)
-      return replyLINE(token, msgTaskList('📅 งานเดือนนี้', new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), logs))
+      return replyLINE(token, msgTaskList('📅 งานเดือนนี้', new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), logs))
     }
     case 'recent': {
       const logs = await getRecentLogs(uid, 5)
@@ -1710,7 +1769,7 @@ async function routeIntent(uid, intent, token, { project, understood } = {}) {
           header:{ type:'box', layout:'vertical', paddingAll:'16px', backgroundColor:BRAND.purpleBg,
             contents:[
               { type:'text', text:'📈 รายงานเดือนนี้', weight:'bold', size:'md', color:BRAND.purple },
-              { type:'text', text:new Date().toLocaleDateString('th-TH',{month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
+              { type:'text', text:new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',month:'long',year:'numeric'}), size:'xs', color:BRAND.textMuted, margin:'xs' },
             ]},
           body:{ type:'box', layout:'vertical', paddingAll:'14px', spacing:'sm', backgroundColor:BRAND.cardBg,
             contents:[
@@ -1754,19 +1813,19 @@ async function handleCmd(uid, text, token) {
   const arg=parts.slice(1).join(' ')
 
   if (cmd==='/skip') {
-    const s=getSession(uid)
+    const s=await getSession(uid)
     if (s.state==='awaiting_desc' && s.data.imgUrl) {
       const d={ title:'รูปภาพจาก LINE', desc:'', summary:'', category:'photo', hours:1, tags:['photo'], images:[s.data.imgUrl] }
       const saved=await saveWorklog(uid,d)
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token, msgWorklogSaved(d, saved))
     }
-    clearSession(uid)
+    await clearSession(uid)
     return replyLINE(token,[{type:'text',text:'ไม่มีรูปค้างอยู่ครับ'}])
   }
 
   if (cmd==='/today') {
-    const today=new Date().toISOString().split('T')[0]
+    const today=bkkToday()
     const logs=await getTodayLogs(uid)
     if (!logs.length) return replyLINE(token,[{type:'text',text:'วันนี้ยังไม่มีงาน 📋\nส่งข้อความหรือรูปเพื่อบันทึกงาน!'}])
     return replyLINE(token, msgToday(logs, today))
@@ -1786,23 +1845,35 @@ async function handleCmd(uid, text, token) {
   if (cmd==='/edit' && arg) {
     const log=await getWorklog(arg)
     if (!log) return replyLINE(token,[{type:'text',text:'ไม่พบงานนี้'}])
-    return replyLINE(token, msgEditMenu(log))
+    return replyLINE(token, msgTaskCard(log))
   }
 
   if (cmd==='/edit-title' && arg) {
-    setSession(uid,'editing_title',{id:arg})
+    await setSession(uid,'editing_title',{id:arg})
     return replyLINE(token,[{type:'text',text:'✏️ พิมพ์ชื่องานใหม่:'}])
   }
   if (cmd==='/edit-desc' && arg) {
-    setSession(uid,'editing_desc',{id:arg})
+    await setSession(uid,'editing_desc',{id:arg})
     return replyLINE(token,[{type:'text',text:'📄 พิมพ์รายละเอียดงานใหม่:'}])
   }
   if (cmd==='/edit-hours' && arg) {
-    setSession(uid,'editing_hours',{id:arg})
+    await setSession(uid,'editing_hours',{id:arg})
     return replyLINE(token,[{type:'text',text:'⏱ พิมพ์จำนวนชั่วโมง เช่น: 2.5'}])
   }
+  if (cmd==='/edit-time' && arg) {
+    await setSession(uid,'editing_time',{id:arg})
+    return replyLINE(token,[{type:'text',text:'🕐 พิมพ์ช่วงเวลา เช่น 14:00-15:30 (หรือเวลาเริ่มอย่างเดียว 14:00):'}])
+  }
+  if (cmd==='/edit-due' && arg) {
+    await setSession(uid,'editing_due',{id:arg})
+    return replyLINE(token,[{type:'text',text:'📅 พิมพ์วันครบกำหนด เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้" (พิมพ์ "ลบ" เพื่อเอาออก):'}])
+  }
+  if (cmd==='/edit-date' && arg) {
+    await setSession(uid,'editing_date',{id:arg})
+    return replyLINE(token,[{type:'text',text:'📆 พิมพ์วันที่ของงาน เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้":'}])
+  }
   if (cmd==='/edit-cat' && arg) {
-    setSession(uid,'editing_cat',{id:arg})
+    await setSession(uid,'editing_cat',{id:arg})
     // Quick Reply with category buttons
     return replyLINE(token,[{
       type:'text', text:'📂 เลือกหมวดหมู่:',
@@ -1813,12 +1884,12 @@ async function handleCmd(uid, text, token) {
     const parts2=arg.split(' '), id=parts2[0], cat=parts2[1]
     if (!CAT[cat]) return replyLINE(token,[{type:'text',text:'หมวดไม่ถูกต้อง'}])
     await updateWorklog(id,{category:cat})
-    clearSession(uid)
-    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนหมวดเป็น '+(CAT[cat].emoji)+' '+(CAT[cat].label)+' แล้ว'}])
+    await clearSession(uid)
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
 
   if (cmd==='/addimage' && arg) {
-    setSession(uid,'adding_img',{id:arg})
+    await setSession(uid,'adding_img',{id:arg})
     return replyLINE(token,[{type:'text',text:'📸 ส่งรูปที่ต้องการเพิ่ม:'}])
   }
 
@@ -1845,7 +1916,7 @@ async function handleCmd(uid, text, token) {
   if (cmd==='/help') {
     return replyLINE(token,[{
       type:'text',
-      text:'🤖 WorkLog AI — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้" · "ส่ง PDF" · "ส่ง PPT"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
+      text:'🤖 StayScape — ผู้ช่วย AI\n\nพิมพ์เป็นภาษาธรรมชาติได้เลย เช่น:\n• "งานวันนี้" / "งานเสร็จวันนี้"\n• "งานค้าง" / "งานสัปดาห์นี้" / "งานเดือนนี้"\n• "แดชบอร์ด"\n• "งานของ <ชื่อโปรเจกต์>"\n• "เวลาทำงานเดือนนี้" / "สรุปประสิทธิภาพ"\n• "รายงานเดือนนี้" · "ส่ง PDF" · "ส่ง PPT"\n\n📝 พิมพ์อธิบายงานที่ทำ → AI บันทึกให้พร้อมการ์ด\n📸 ส่งรูปผลงาน → AI บันทึกให้\n\nคำสั่งลัด: /today /logs /summary /timer start|stop',
       quickReply:{
         items:[
           { type:'action', action:{ type:'message', label:'📊 แดชบอร์ด', text:'แดชบอร์ด' } },
@@ -1870,10 +1941,10 @@ async function handleCmd(uid, text, token) {
 // SESSION HANDLER
 // ─────────────────────────────────────────
 async function handleSession(uid, text, token) {
-  const s=getSession(uid)
+  const s=await getSession(uid)
 
   if (s.state==='awaiting_desc') {
-    clearSession(uid)
+    await clearSession(uid)
     await replyLINE(token,[{type:'text',text:'⏳ AI กำลังวิเคราะห์...'}])
     const analyzed=await analyze(text,text)
     const d={
@@ -1887,20 +1958,42 @@ async function handleSession(uid, text, token) {
   }
 
   if (s.state==='editing_title') {
-    clearSession(uid)
-    await updateWorklog(s.data.id,{title:text})
-    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนชื่อเป็น: '+text}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{title:text})
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_desc') {
-    clearSession(uid)
-    await updateWorklog(s.data.id,{desc:text})
-    return replyLINE(token,[{type:'text',text:'✅ แก้รายละเอียดแล้ว'}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{desc:text})
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_hours') {
     const h=parseFloat(text)||1
-    clearSession(uid)
-    await updateWorklog(s.data.id,{hours:h})
-    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนเวลาเป็น '+h+' ชม.'}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{hours:h})
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
+  }
+  if (s.state==='editing_time') {
+    const tr=parseTimeRange(text)
+    if (!tr) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบเวลาไม่ถูกต้อง ลองใหม่ เช่น 14:00-15:30'}])
+    const id=s.data.id; const log=await getWorklog(id); const date=log?.date||bkkToday()
+    await clearSession(uid)
+    await updateWorklog(id,{ start_at: bkkISO(date,tr.start), end_at: tr.end ? bkkISO(date,tr.end) : null })
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
+  }
+  if (s.state==='editing_due') {
+    const due=parseDateInput(text)
+    if (due===null) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06 หรือ "พรุ่งนี้"'}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{ due_date: due || null })
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
+  }
+  if (s.state==='editing_date') {
+    const wd=parseDateInput(text)
+    if (!wd) return replyLINE(token,[{type:'text',text:'⚠️ รูปแบบวันที่ไม่ถูกต้อง เช่น 2026-06-15, 15/06, "วันนี้" หรือ "พรุ่งนี้"'}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{ workdate: wd })
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
   if (s.state==='editing_cat') {
     const cat=text.trim().toLowerCase()
@@ -1908,9 +2001,9 @@ async function handleSession(uid, text, token) {
       type:'text', text:'กรุณาเลือกหมวดจากปุ่มด้านล่าง:',
       quickReply: qrCategories('/set-cat', s.data.id)
     }])
-    clearSession(uid)
-    await updateWorklog(s.data.id,{category:cat})
-    return replyLINE(token,[{type:'text',text:'✅ เปลี่ยนหมวดเป็น '+(CAT[cat].emoji)+' '+(CAT[cat].label)}])
+    const id=s.data.id; await clearSession(uid)
+    await updateWorklog(id,{category:cat})
+    return replyLINE(token, msgTaskCard(await getWorklog(id)))
   }
 
   return false
@@ -1925,8 +2018,11 @@ async function processEvent(event) {
   const mtype = event.message?.type
 
   if (event.type==='follow') {
-    await supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).catch(()=>{})
-    return replyLINE(token, msgWelcome())
+    // Send the welcome FIRST — don't let a slow DB write delay it past the
+    // reply token's lifetime. Record the follower in the background.
+    const sent = replyLINE(token, msgWelcome())
+    try { supabase.from('line_users').upsert({line_user_id:uid,followed_at:new Date().toISOString(),active:true}).then(()=>{},()=>{}) } catch {}
+    return sent
   }
 
   // Postback from Flex Card buttons (status change)
@@ -1939,16 +2035,16 @@ async function processEvent(event) {
     if (action === 'status' && logId && newStatus) {
       await updateWorklog(logId, { status: newStatus })
       const updated = await getWorklog(logId)
-      if (updated) {
-        const d = {
-          id: updated.id, title: updated.title,
-          aiSummary: updated.ai_summary, category: updated.category,
-          hours: updated.hours_spent, status: newStatus,
-          tags: updated.tags || [], date: updated.date,
-        }
-        // Completing from a card is a real completion event.
-        return replyLINE(token, msgStatusUpdate(d, newStatus === 'done' ? 'completed' : 'status_change'))
-      }
+      if (updated) return replyLINE(token, msgTaskCard(updated))
+    }
+
+    // 🗑 Delete — ask for confirmation, then delete.
+    if (action === 'delete_ask' && logId) {
+      return replyLINE(token, msgDeleteConfirm(await getWorklog(logId)))
+    }
+    if (action === 'delete' && logId) {
+      const ok = await deleteWorklog(logId)
+      return replyLINE(token, [{ type:'text', text: ok ? '🗑 ลบงานแล้ว' : '⚠️ ลบไม่สำเร็จ ลองใหม่อีกครั้งครับ' }])
     }
 
     // 🤖 AI Analyze Task
@@ -1968,7 +2064,7 @@ async function processEvent(event) {
 
     // Create all tasks detected from a PDF (§7)
     if (action === 'pdf_create') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       const tasks = (s.state === 'pdf_tasks' && Array.isArray(s.data.tasks)) ? s.data.tasks : []
       if (!tasks.length) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ กรุณาส่งไฟล์ PDF อีกครั้งครับ'}])
       let created = 0
@@ -1980,7 +2076,7 @@ async function processEvent(event) {
         })
         if (saved) created++
       }
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{
         type:'text',
         text:'✅ สร้าง '+created+' งานจากเอกสารแล้ว (สถานะ: ร่าง)\nเปิดแก้ไขรายละเอียดได้ในแอป',
@@ -1991,13 +2087,13 @@ async function processEvent(event) {
       }])
     }
     if (action === 'pdf_cancel') {
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'ยกเลิกแล้ว ไม่ได้สร้างงานจากเอกสาร ❌'}])
     }
 
     // AI Inbox confirmation (§10)
     if (action === 'inbox_create') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       if (s.state !== 'inbox_confirm' || !s.data.analysis) return replyLINE(token,[{type:'text',text:'เซสชันหมดอายุ ⏳ ส่งรูปอีกครั้งครับ'}])
       const a = s.data.analysis
       const tags = [...(a.tags || [])]
@@ -2010,17 +2106,17 @@ async function processEvent(event) {
         tags, images: [s.data.imgUrl].filter(Boolean), status: 'draft', source: 'line-inbox',
       }
       const saved = await saveWorklog(uid, d)
-      clearSession(uid)
-      return replyLINE(token, msgCompactCreated(d, saved))
+      await clearSession(uid)
+      return replyLINE(token, msgTaskCard(saved))
     }
     if (action === 'inbox_describe') {
-      const s = getSession(uid)
+      const s = await getSession(uid)
       const imgUrl = s.data?.imgUrl || null
-      setSession(uid, 'awaiting_desc', { imgUrl })
+      await setSession(uid, 'awaiting_desc', { imgUrl })
       return replyLINE(token,[{type:'text',text:'✏️ พิมพ์รายละเอียดงานในรูปนี้ได้เลยครับ'}])
     }
     if (action === 'inbox_skip') {
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'ข้ามแล้ว — รูปถูกเก็บไว้ในคลังภาพแล้ว ✅'}])
     }
     return
@@ -2033,12 +2129,23 @@ if (mtype==='text') {
   const text=(event.message.text||'').trim()
   if (!text) return
   if (text.startsWith('/')) return handleCmd(uid,text,token)
-  const s=getSession(uid)
+
+  // Manual welcome (the follow event only fires on first add / unblock).
+  if (/^(เริ่มต้น|เริ่มใช้งาน|แนะนำ|start|getstarted)$/i.test(text)) return replyLINE(token, msgWelcome())
+
+  // Rich-menu "เพิ่มงาน" → prompt instead of creating a junk task.
+  if (text === 'เพิ่มงาน') {
+    return replyLINE(token,[{ type:'text', text:'📝 พิมพ์เล่างานที่ทำหรือจะทำได้เลยครับ\nเช่น "พรุ่งนี้บ่าย 2 ตัดต่อวิดีโอลูกค้า" หรือ "ออกแบบโปสเตอร์ร้านกาแฟ 2 ชม."\n\nเดี๋ยว AI จัดหมวด เวลา และเตือนให้อัตโนมัติ ✨\nหรือส่งรูป/ไฟล์ PDF ก็บันทึกให้ได้เลย' }])
+  }
+
+  const s=await getSession(uid)
   if (s.state!=='idle') {
     const handled=await handleSession(uid,text,token)
     if (handled!==false) return
   }
 
+  // Show the typing/loading animation while AI understands + saves.
+  await startLoading(uid)
   // AI Command Center: understand the message (intent) in a single AI call.
   const understood = await understand(text)
 
@@ -2079,12 +2186,13 @@ if (mtype==='text') {
   if (t.due)   d.due_date = t.due
   if (['low','medium','high'].includes(t.priority)) d.priority = t.priority
   const saved = await saveWorklog(uid, d)
-  return replyLINE(token, msgCompactCreated(d, saved))
+  return replyLINE(token, msgTaskCard(saved))
 }
 
   // IMAGE
   if (mtype==='image') {
-    const s=getSession(uid)
+    await startLoading(uid)
+    const s=await getSession(uid)
     // Adding image to existing worklog
     if (s.state==='adding_img' && s.data.id) {
       const buf=await getContent(event.message.id)
@@ -2093,10 +2201,10 @@ if (mtype==='text') {
         const log=await getWorklog(s.data.id)
         const imgs=[...(log?.image_urls||[]),url]
         await updateWorklog(s.data.id,{images:imgs})
-        clearSession(uid)
-        return replyLINE(token,[{type:'text',text:'📸 เพิ่มรูปแล้ว ✅ ('+imgs.length+' รูปทั้งหมด)'}])
+        await clearSession(uid)
+        return replyLINE(token, msgTaskCard(await getWorklog(s.data.id)))
       }
-      clearSession(uid)
+      await clearSession(uid)
       return replyLINE(token,[{type:'text',text:'⚠️ อัปโหลดรูปไม่สำเร็จ'}])
     }
     // New image → AI Inbox: understand it with Claude vision (§10)
@@ -2107,17 +2215,18 @@ if (mtype==='text') {
       ? await analyzeImageInbox(buf.toString('base64'))
       : null
     if (analysis) {
-      setSession(uid,'inbox_confirm',{ analysis, imgUrl })
+      await setSession(uid,'inbox_confirm',{ analysis, imgUrl })
       return replyLINE(token, msgInboxCard(analysis, imgUrl))
     }
     // Fallback: vision unavailable/too large → ask for a description.
-    setSession(uid,'awaiting_desc',{imgUrl})
+    await setSession(uid,'awaiting_desc',{imgUrl})
     return replyLINE(token, msgImageReceived(imgUrl||'https://via.placeholder.com/800x400/6C63FF/FFFFFF?text=WorkLog+AI'))
   }
 
   if (mtype==='video') return replyLINE(token,[{type:'text',text:'🎬 รับวิดีโอแล้ว ✅\nพิมพ์อธิบายงานในวิดีโอนี้เพื่อบันทึก'}])
   if (mtype==='audio') return replyLINE(token,[{type:'text',text:'🎤 รับข้อความเสียงแล้ว ✅\nตอนนี้ยังไม่รองรับการถอดเสียงอัตโนมัติ — พิมพ์อธิบายงานเพื่อบันทึกได้เลยครับ'}])
   if (mtype==='file') {
+    await startLoading(uid)
     const fileName = event.message.fileName || 'ไฟล์'
     // Only PDFs get the intelligence pipeline; other files are acknowledged.
     if (!/\.pdf$/i.test(fileName)) {
@@ -2141,7 +2250,7 @@ if (mtype==='text') {
     info.pages = pages // carry the real page count to the summary card
     const messages = [msgPdfSummary(fileName, info)]
     if (info.tasks.length) {
-      setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })
+      await setSession(uid, 'pdf_tasks', { tasks: info.tasks, fileName })
       messages.push(msgPdfTasks(info.tasks))
     } else {
       messages.push({ type:'text', text:'ℹ️ ไม่พบงานที่ชัดเจนให้สร้างจากเอกสารนี้' })
@@ -2173,7 +2282,7 @@ export async function PUT(request) {
 
 export async function GET() {
   return NextResponse.json({
-    status:'WorkLog AI LINE Bot v3 ✅',
+    status:'StayScape LINE Bot v3 ✅',
     time:new Date().toISOString(),
     env:{
       LINE_TOKEN:LINE_TOKEN?'✅':'❌',

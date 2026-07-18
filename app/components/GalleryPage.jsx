@@ -72,11 +72,16 @@ async function ensureBucket() {
   } catch { return false }
 }
 
-async function uploadFile(file, category = 'other') {
-  const ext = file.name.split('.').pop()
+async function getUid() {
+  try { const { data } = await supabase.auth.getSession(); return data?.session?.user?.id || null }
+  catch { return null }
+}
+
+async function uploadFile(file, category = 'other', uid = null) {
   const timestamp = Date.now()
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-  const path = category + '/' + timestamp + '_' + safeName
+  // Per-user prefix → users never see each other's gallery files.
+  const path = (uid ? uid + '/' : '') + category + '/' + timestamp + '_' + safeName
 
   const { data, error } = await supabase.storage
     .from(BUCKET)
@@ -105,19 +110,21 @@ async function deleteFile(path) {
   if (error) throw error
 }
 
-async function listFiles() {
+async function listFiles(uid) {
+  if (!uid) return []
   const cats = CATS.filter(c => c.id !== 'all').map(c => c.id)
   const allFiles = []
 
   for (const cat of cats) {
-    const { data, error } = await supabase.storage.from(BUCKET).list(cat, {
+    const prefix = uid + '/' + cat
+    const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
       limit: 200, sortBy: { column: 'created_at', order: 'desc' }
     })
     if (error || !data) continue
 
     for (const file of data) {
       if (!file.name || file.name === '.emptyFolderPlaceholder') continue
-      const path = cat + '/' + file.name
+      const path = prefix + '/' + file.name
       const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path)
       allFiles.push({
         id: file.id || path,
@@ -495,7 +502,8 @@ export default function GalleryPage({ logs }) {
     setLoading(true)
     try {
       await ensureBucket()
-      const data = await listFiles()
+      const uid = await getUid()
+      const data = await listFiles(uid)
       setFiles(data)
       setStorageError(false)
     } catch (err) {
@@ -527,10 +535,11 @@ export default function GalleryPage({ logs }) {
     setProgress(0)
     const total = fileList.length
     const uploaded = []
+    const uid = await getUid()
 
     for (let i = 0; i < total; i++) {
       try {
-        const result = await uploadFile(fileList[i], uploadCategory)
+        const result = await uploadFile(fileList[i], uploadCategory, uid)
         uploaded.push(result)
         setProgress(Math.round(((i + 1) / total) * 100))
       } catch (err) {

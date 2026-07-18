@@ -20,13 +20,14 @@ export default class ErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div style={{
-          minHeight: '100vh', display: 'flex', alignItems: 'center',
+          minHeight: '100dvh', display: 'flex', alignItems: 'center',
           justifyContent: 'center', flexDirection: 'column', gap: 16,
           background: 'linear-gradient(160deg,#F0ECFF,#E8F4FF,#F0FFF8)',
           fontFamily: 'Inter,sans-serif', padding: 24, textAlign: 'center',
         }}>
-          <div style={{ width:52, height:52, borderRadius:16, background:'linear-gradient(135deg,#1a1040,#0D1A2E)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 20px rgba(108,99,255,0.35)' }}>
-            <span style={{ background:'linear-gradient(135deg,#a78bfa,#38bdf8)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', fontSize:20, fontWeight:900 }}>SS</span>
+          <div style={{ width:52, height:52, borderRadius:16, background:'#fff', overflow:'hidden', boxShadow:'0 4px 20px rgba(108,99,255,0.35)' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand-logo.png" alt="StayScape" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
           </div>
           <div style={{ fontSize:18, fontWeight:700, color:'#1a1a2e' }}>เกิดข้อผิดพลาด</div>
           <div style={{ fontSize:13, color:'#9ca3af', maxWidth:300 }}>

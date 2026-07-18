@@ -84,6 +84,7 @@ body {
   background: var(--bg);
   background-attachment: fixed;
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 
@@ -98,7 +99,7 @@ body::before {
   pointer-events: none; z-index: 0;
 }
 
-.app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+.app { display: flex; height: 100vh; height: 100dvh; overflow: hidden; position: relative; z-index: 1; }
 
 /* ════════════════════════════════════════
    SIDEBAR
@@ -112,9 +113,10 @@ body::before {
   border-right: 1px solid rgba(255,255,255,0.72);
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
+  position: relative;
   height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
   box-shadow: 4px 0 24px rgba(100,110,200,0.08);
 }
 
@@ -126,7 +128,8 @@ body::before {
 .logo-mark {
   width: 40px; height: 40px;
   border-radius: 13px;
-  background: linear-gradient(135deg, #6C63FF, #A78BFA);
+  background: #fff;
+  overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   font-size: 18px;
   box-shadow: 0 4px 14px rgba(108,99,255,0.4);
@@ -277,7 +280,7 @@ body::before {
 /* ════════════════════════════════════════
    MAIN AREA
 ════════════════════════════════════════ */
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 
 .topbar {
   padding: 16px 32px;
@@ -293,7 +296,7 @@ body::before {
   box-shadow: 0 2px 16px rgba(100,110,200,0.08);
 }
 
-.content { padding: 28px 32px; overflow-y: auto; flex: 1; }
+.content { padding: 28px 32px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
 
 /* ════════════════════════════════════════
    BUTTONS
@@ -733,8 +736,8 @@ body::before {
 ════════════════════════════════════════ */
 @media (max-width: 768px) {
   .sb { display: none; }
-  .app { display: block; }
-  .main { min-height: 100vh; }
+  .app { display: block; height: auto; overflow: visible; }
+  .main { height: auto; min-height: 100dvh; overflow: visible; }
 
   /* Topbar */
   .topbar { padding: 11px 14px; }
@@ -742,7 +745,7 @@ body::before {
   .topbar .btn-primary.btn-sm { font-size: 12px; padding: 7px 12px; }
 
   /* Content */
-  .content { padding: 14px 12px 92px; }
+  .content { padding: 14px 12px 92px; overflow: visible; }
 
   /* Hero */
   .hero { padding: 18px 16px; }
@@ -2017,19 +2020,39 @@ export default function App(){
 
   const goPage = (id) => { setPage(id); if(id!=="log") setShowForm(false); else{setEditLog(null);setShowForm(true)}; setEditLog(null); setMobMenu(false) }
 
+  // Deep-link: /?page=calendar (e.g. from the LINE rich menu) opens that page.
+  useEffect(()=>{
+    try {
+      const p = new URLSearchParams(window.location.search).get('page')
+      const valid = ['dashboard','logs','projects','calendar','reports','ai-assistant','export','presentation','gallery','portfolio','profile']
+      if (p && valid.includes(p)) {
+        setPage(p)
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } catch {}
+  },[])
+
   useEffect(()=>{
     async function load(){
-      const authUser=(await supabase.auth.getUser()).data?.user
+      // getSession reads local storage (no network) so this works offline too.
+      const sess=(await supabase.auth.getSession().catch(()=>({data:{}}))).data?.session
+      const authUser=sess?.user
       const uid=authUser?.id
       const lineId=authUser?.user_metadata?.line_user_id
+      // Offline-queued (not-yet-synced) inserts, shown optimistically.
+      const pending=readOfflineQueue().filter(i=>i.op==='insert').map(i=>rowToLog({...i.payload,id:i.tempId,_pending:true}))
       if(!uid){setLogs(SAMPLE);return}
       // LINE users: logs are keyed by line_user_id (same as the LINE bot writes),
       // so web + bot + every device share one dataset. Others: fall back to user_id.
-      const q=supabase.from('work_logs').select('*').order('date',{ascending:false})
-      const{data,error}=await (lineId ? q.eq('line_user_id',lineId) : q.eq('user_id',uid))
-      // Logged-in user with no logs → empty state (NOT the demo SAMPLE).
-      if(error||!data?.length){setLogs([]);return}
-      setLogs(data.map(d=>({id:d.id,date:d.date,title:d.title,description:d.description,aiSummary:d.ai_summary,category:d.category,hours:d.hours_spent,status:d.status,tags:d.tags||[],imageUrls:d.image_urls||[],startAt:d.start_at||null,endAt:d.end_at||null,dueDate:d.due_date||null,priority:d.priority||'medium'})))
+      try {
+        const q=supabase.from('work_logs').select('*').order('date',{ascending:false})
+        const{data,error}=await (lineId ? q.eq('line_user_id',lineId) : q.eq('user_id',uid))
+        if(error) throw error
+        setLogs([...pending, ...(data||[]).map(rowToLog)])
+      } catch {
+        // Offline / fetch failed → still show locally-queued work so the app stays usable.
+        setLogs(pending)
+      }
     }
     load()
   },[])
@@ -2064,11 +2087,55 @@ export default function App(){
     }
   }
 
+  // ── Offline queue: save/edit/delete while offline, auto-sync when back online ──
+  function readOfflineQueue(){ try { return JSON.parse(localStorage.getItem('ss-offline-queue')||'[]') } catch { return [] } }
+  function writeOfflineQueue(q){ try { localStorage.setItem('ss-offline-queue', JSON.stringify(q)) } catch {} }
+  function queueOffline(op){ const q=readOfflineQueue(); q.push(op); writeOfflineQueue(q) }
+  function isNetErr(e){ return (typeof navigator!=='undefined' && !navigator.onLine) || /load failed|failed to fetch|networkerror|network request failed/i.test(String(e?.message||e)) }
+  function rowToLog(d){ return { id:d.id, date:d.date, title:d.title, description:d.description, aiSummary:d.ai_summary, category:d.category, hours:d.hours_spent, status:d.status, tags:d.tags||[], imageUrls:d.image_urls||[], startAt:d.start_at||null, endAt:d.end_at||null, dueDate:d.due_date||null, priority:d.priority||'medium', _pending:d._pending||false } }
+
+  async function flushOfflineQueue(){
+    if (typeof navigator!=='undefined' && !navigator.onLine) return
+    const q = readOfflineQueue(); if (!q.length) return
+    const remaining = []; let synced = 0
+    for (const item of q){
+      try {
+        if (item.op==='insert'){
+          const { data, error } = await supabase.from('work_logs').insert(item.payload).select()
+          if (error || !data?.[0]) throw error || new Error('insert failed')
+          const rid = data[0].id
+          setLogs(ls => ls.map(l => l.id===item.tempId ? { ...l, id:rid, _pending:false } : l))
+          synced++
+        } else if (item.op==='update'){
+          const { error } = await supabase.from('work_logs').update(item.payload).eq('id', item.id)
+          if (error) throw error
+          setLogs(ls => ls.map(l => l.id===item.id ? { ...l, _pending:false } : l))
+          synced++
+        } else if (item.op==='delete'){
+          const { error } = await supabase.from('work_logs').delete().eq('id', item.id)
+          if (error) throw error
+          synced++
+        }
+      } catch { remaining.push(item) }
+    }
+    writeOfflineQueue(remaining)
+    if (synced) showT(`✅ ซิงค์งานออฟไลน์ ${synced} รายการแล้ว`)
+  }
+
+  useEffect(()=>{
+    const onOnline = () => flushOfflineQueue()
+    queueMicrotask(onOnline)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
+
   async function handleSave(form) {
-  // Upload images to Supabase Storage ถ้ายังไม่ได้ upload
+  // Images already resolved to URLs by the form; offline saves keep existing URLs.
   let finalImageUrls = form.imageUrls || []
 
-  const authUser=(await supabase.auth.getUser()).data?.user
+  const sess=(await supabase.auth.getSession().catch(()=>({data:{}}))).data?.session
+  const authUser=sess?.user
   const uid=authUser?.id
   const lineId=authUser?.user_metadata?.line_user_id
   const d = {
@@ -2091,33 +2158,72 @@ export default function App(){
 
   // Only treat as an edit when there's a real existing id. The Calendar's
   // "add" paths set editLog to a no-id object, which must still INSERT.
-  if (editLog && editLog.id) {
-    const { error } = await supabase.from('work_logs').update(d).eq('id', editLog.id)
-    if (error) { console.error('[SAVE]', error); showT('⚠️ บันทึกไม่สำเร็จ: ' + error.message); throw error }
-    setLogs(ls => ls.map(l => l.id === editLog.id
-      ? { ...l, ...form, imageUrls: finalImageUrls }
-      : l
-    ))
-    showT('✓ แก้ไขงานแล้ว')
-  } else {
-    const { data, error } = await supabase.from('work_logs').insert(d).select()
-    if (error || !data?.[0]) { console.error('[SAVE]', error); showT('⚠️ บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : '')); throw (error || new Error('insert failed')) }
-    setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls }, ...ls])
-    showT('✓ บันทึกงานแล้ว')
+  const isEdit = !!(editLog && editLog.id)
+
+  // Offline (or a network failure) → queue it and update the UI optimistically.
+  const saveOffline = () => {
+    if (isEdit) {
+      // Editing a not-yet-synced item: patch its queued insert instead.
+      if (String(editLog.id).startsWith('offline-')) {
+        const q=readOfflineQueue(); const it=q.find(i=>i.tempId===editLog.id)
+        if (it) { it.payload = d; writeOfflineQueue(q) }
+      } else {
+        queueOffline({ op:'update', id: editLog.id, payload: d })
+      }
+      setLogs(ls => ls.map(l => l.id === editLog.id ? { ...l, ...form, imageUrls: finalImageUrls, _pending:true } : l))
+    } else {
+      const tempId = 'offline-' + Date.now()
+      queueOffline({ op:'insert', tempId, payload: d })
+      setLogs(ls => [{ ...form, id: tempId, imageUrls: finalImageUrls, _pending:true }, ...ls])
+    }
+    showT('📴 บันทึกออฟไลน์ไว้แล้ว · จะซิงค์อัตโนมัติเมื่อต่อเน็ต')
+    setShowForm(false); setEditLog(null); setPage('logs')
   }
-  setShowForm(false); setEditLog(null); setPage('logs')
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { saveOffline(); return }
+
+  try {
+    if (isEdit) {
+      const { error } = await supabase.from('work_logs').update(d).eq('id', editLog.id)
+      if (error) throw error
+      setLogs(ls => ls.map(l => l.id === editLog.id ? { ...l, ...form, imageUrls: finalImageUrls } : l))
+      showT('✓ แก้ไขงานแล้ว')
+    } else {
+      const { data, error } = await supabase.from('work_logs').insert(d).select()
+      if (error || !data?.[0]) throw (error || new Error('insert failed'))
+      setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls }, ...ls])
+      showT('✓ บันทึกงานแล้ว')
+    }
+    setShowForm(false); setEditLog(null); setPage('logs')
+  } catch (err) {
+    if (isNetErr(err)) { saveOffline(); return }
+    console.error('[SAVE]', err); showT('⚠️ บันทึกไม่สำเร็จ: ' + (err?.message || err)); throw err
+  }
 }
   async function handleDelete(id) {
-  await supabase.from('work_logs').delete().eq('id', id)
   setLogs(ls => ls.filter(l => l.id !== id))
-  showT('ลบงานแล้ว')
+  // Not-yet-synced item → just drop it from the queue, nothing to delete server-side.
+  if (String(id).startsWith('offline-')) {
+    writeOfflineQueue(readOfflineQueue().filter(i => i.tempId !== id))
+    showT('ลบงานแล้ว'); return
+  }
+  if (typeof navigator!=='undefined' && !navigator.onLine) { queueOffline({op:'delete', id}); showT('📴 ลบออฟไลน์ไว้แล้ว · จะซิงค์เมื่อต่อเน็ต'); return }
+  try { const { error } = await supabase.from('work_logs').delete().eq('id', id); if (error) throw error; showT('ลบงานแล้ว') }
+  catch (err) { if (isNetErr(err)) { queueOffline({op:'delete', id}); showT('📴 ลบออฟไลน์ไว้แล้ว') } else { showT('⚠️ ลบไม่สำเร็จ') } }
 }
 
   async function handleStatusChange(id, newStatus) {
-    await supabase.from('work_logs').update({ status: newStatus }).eq('id', id)
     setLogs(ls => ls.map(l => l.id===id ? {...l, status:newStatus} : l))
     const ST = { done:'✅ เสร็จแล้ว', in_progress:'🔄 กำลังทำ', draft:'📝 ร่าง' }
-    showT(ST[newStatus]||'อัปเดตสถานะแล้ว')
+    // For a not-yet-synced item, patch its queued insert payload instead of queuing an update.
+    const queueStatus = () => {
+      if (String(id).startsWith('offline-')) {
+        const q=readOfflineQueue(); const it=q.find(i=>i.tempId===id); if (it) { it.payload.status=newStatus; writeOfflineQueue(q) }
+      } else { queueOffline({op:'update', id, payload:{status:newStatus}}) }
+    }
+    if (typeof navigator!=='undefined' && !navigator.onLine) { queueStatus(); showT('📴 ' + (ST[newStatus]||'อัปเดต') + ' (ออฟไลน์)'); return }
+    try { const { error } = await supabase.from('work_logs').update({ status: newStatus }).eq('id', id); if (error) throw error; showT(ST[newStatus]||'อัปเดตสถานะแล้ว') }
+    catch (err) { if (isNetErr(err)) { queueStatus(); showT('📴 บันทึกสถานะออฟไลน์ไว้แล้ว') } else { showT('⚠️ อัปเดตไม่สำเร็จ') } }
   }
 
   // Sidebar nav structure
@@ -2329,7 +2435,7 @@ export default function App(){
           <div className="sb-logo">
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div className="logo-mark">
-  <span style={{background:"linear-gradient(135deg,#a78bfa,#38bdf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontSize:15,fontWeight:900,letterSpacing:"-1px"}}>SS</span></div>
+  <img src="/brand-logo.png" alt="StayScape" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
               <div><div className="logo-name">StayScape</div><div className="logo-sub">Work · Life · Balance</div></div>
             </div>
           </div>

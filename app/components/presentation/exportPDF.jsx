@@ -206,7 +206,7 @@ function SlidePage({ slide, theme, index, total, meta }) {
 
 function DeckDocument({ slides, theme, meta }) {
   return (
-    <Document title={meta.title} author={meta.brand || 'WorkLog AI'}>
+    <Document title={meta.title} author={meta.brand || 'StayScape'}>
       {slides.map((slide, i) => (
         <SlidePage key={i} slide={slide} theme={theme} index={i} total={slides.length} meta={meta} />
       ))}

@@ -180,5 +180,5 @@ export function formatDay(value, lang = 'th') {
 }
 
 export function safeFileName(name) {
-  return String(name || 'WorkLog-Report').replace(/[^a-zA-Z0-9ก-๙ _.-]/g, '_').trim() || 'WorkLog-Report'
+  return String(name || 'StayScape-Report').replace(/[^a-zA-Z0-9ก-๙ _.-]/g, '_').trim() || 'StayScape-Report'
 }

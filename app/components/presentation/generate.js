@@ -2,7 +2,7 @@
 // All content is derived strictly from the month-filtered tasks passed in.
 import {
   getCat, SECTIONS, computeStats, buildTaskContext, periodLabel,
-  hoursOf, notesOf, isDone, formatDay, logDate,
+  hoursOf, notesOf, isDone, formatDay, logDate, imagesOf,
 } from './shared'
 
 export async function callAI(prompt, { maxTokens = 1200, system } = {}) {
@@ -53,7 +53,7 @@ function extractJSON(text, open, close) {
   return JSON.parse(clean.slice(si, ei + 1))
 }
 
-export async function generateSlides({ logs, year, month, customPrompt, lang = 'th', brand = 'WorkLog AI' }) {
+export async function generateSlides({ logs, year, month, customPrompt, lang = 'th', brand = 'StayScape' }) {
   const stats = computeStats(logs)
   const prompt = [
     `Create a professional executive monthly work report presentation in ${lang === 'th' ? 'Thai' : 'English'} language.`,
@@ -70,10 +70,64 @@ export async function generateSlides({ logs, year, month, customPrompt, lang = '
     const text = await callAI(prompt, { maxTokens: 8000, system: SYSTEM })
     const arr = extractJSON(text, '[', ']')
     if (!Array.isArray(arr) || arr.length < 8) throw new Error('too few slides')
-    return normalize(arr, year, month, lang)
+    return withShowcase(normalize(arr, year, month, lang), logs, lang)
   } catch {
-    return fallbackSlides(logs, year, month, lang, brand)
+    return withShowcase(fallbackSlides(logs, year, month, lang, brand), logs, lang)
   }
+}
+
+// Build 2 showcase slides from the user's own work: a portfolio image grid
+// and a "featured work details" list (titles + AI summaries). Inserted right
+// before the closing slide. Each carries `points` so PDF/PPTX export still works.
+function buildShowcase(logs, lang) {
+  const th = lang === 'th'
+  const t = (a, b) => (th ? a : b)
+  const imgs = []
+  for (const l of (logs || [])) {
+    for (const url of imagesOf(l)) {
+      if (!url) continue
+      imgs.push({ url, caption: l.title || t('งาน', 'Work'), catLabel: getCat(l.category).label })
+      if (imgs.length >= 6) break
+    }
+    if (imgs.length >= 6) break
+  }
+  const notable = [...(logs || [])]
+    .sort((a, b) => hoursOf(b) - hoursOf(a))
+    .slice(0, 6)
+    .map(l => ({
+      title: l.title || t('งาน', 'Work'),
+      summary: (notesOf(l) || '').slice(0, 170),
+      catLabel: getCat(l.category).label,
+      hours: hoursOf(l),
+      date: formatDay(logDate(l), lang),
+    }))
+  const slides = []
+  if (imgs.length) {
+    slides.push({
+      type: 'showcase', section: t('ผลงาน', 'Portfolio'),
+      title: t('ผลงานเด่นประจำเดือน', 'Portfolio Showcase'),
+      subtitle: t(`ตัวอย่างผลงาน ${imgs.length} ชิ้น`, `${imgs.length} featured works this month`),
+      images: imgs,
+      points: imgs.map(i => i.caption),
+    })
+  }
+  if (notable.length) {
+    slides.push({
+      type: 'portfolio', section: t('รายละเอียดผลงาน', 'Work Details'),
+      title: t('รายละเอียดงานเด่น', 'Featured Work Details'),
+      items: notable,
+      points: notable.map(n => `${n.title} — ${n.catLabel} · ${n.hours}h${n.summary ? ' · ' + n.summary : ''}`),
+    })
+  }
+  return slides
+}
+
+function withShowcase(slides, logs, lang) {
+  const extra = buildShowcase(logs, lang)
+  if (!extra.length) return slides
+  const idx = slides.findIndex(s => s.type === 'closing')
+  const at = idx === -1 ? slides.length : idx
+  return [...slides.slice(0, at), ...extra, ...slides.slice(at)]
 }
 
 // Ensure each slide has its blueprint type/section and inject gallery images.
@@ -113,7 +167,7 @@ export async function regenerateSlide({ slide, index, logs, year, month, customP
 }
 
 // ── Fully data-driven fallback (no mock data — computed from real tasks) ──
-export function fallbackSlides(logs, year, month, lang = 'th', brand = 'WorkLog AI') {
+export function fallbackSlides(logs, year, month, lang = 'th', brand = 'StayScape') {
   const th = lang === 'th'
   const stats = computeStats(logs)
   const label = periodLabel(year, month, lang)

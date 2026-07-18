@@ -112,8 +112,7 @@ export default function LoginPage() {
     }
     .login-logo-mark {
       width: 44px; height: 44px; border-radius: 14px;
-      background: linear-gradient(135deg, #1a1040, #0D1A2E);
-      display: flex; align-items: center; justify-content: center;
+      object-fit: cover; background: #fff;
       box-shadow: 0 4px 16px rgba(108,99,255,0.35);
     }
     .login-logo-mark span {
@@ -193,9 +192,7 @@ export default function LoginPage() {
         <div className="login-card">
           {/* Logo */}
           <div className="login-logo">
-            <div className="login-logo-mark">
-              <span>SS</span>
-            </div>
+            <img className="login-logo-mark" src="/brand-logo.png" alt="StayScape" />
             <div>
               <div className="login-brand">StayScape</div>
               <div className="login-brand-sub">Work · Life · Balance</div>

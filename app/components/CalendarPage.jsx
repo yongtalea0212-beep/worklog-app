@@ -9,6 +9,12 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell } from 'rechar
 // ─────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────
+// Local calendar date (YYYY-MM-DD) — uses the browser's timezone, NOT UTC, so
+// "today" is correct in Thailand even past midnight (toISOString would be UTC).
+const ymd = (d = new Date()) => {
+  const x = new Date(d)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
 const CATS = [
   { id:'graphic',   label:'Graphic Design', color:'#6C63FF', bg:'rgba(108,99,255,0.1)',  icon:'🎨' },
   { id:'video',     label:'Video Editing',  color:'#06B6D4', bg:'rgba(6,182,212,0.1)',   icon:'🎬' },
@@ -226,8 +232,28 @@ const CAL_CSS = `
 .fc-evt { overflow: hidden; }
 .fc-evt-tm { font-size: 10px; font-weight: 800; opacity: .9; }
 .fc-evt-tt { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* keep 3 rows readable on mobile month cells */
+
+/* More-link popover: always on top, scrollable, never overlaps the page below */
+.fc .fc-popover { z-index: 140 !important; max-height: 60vh; overflow-y: auto; border-radius: 14px !important; box-shadow: 0 12px 40px rgba(60,70,130,0.28) !important; border: 1px solid rgba(255,255,255,0.95) !important; }
+.fc .fc-popover-body { padding: 8px !important; }
+/* Easier-to-tap day cells & events — tall enough for 3 readable blocks */
 .fc .fc-daygrid-day-frame { min-height: 92px; }
+.fc .fc-daygrid-day-number { padding: 6px 9px !important; cursor: pointer; }
+.fc .fc-daygrid-more-link { font-weight: 700; }
+.fc .fc-timegrid-event { min-height: 24px; }
+
+/* Mobile: keep FullCalendar's own toolbar (prev/next/today + title) readable */
+@media (max-width: 820px) {
+  .fc .fc-toolbar.fc-header-toolbar { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px !important; }
+  .fc .fc-toolbar-chunk { display: flex; justify-content: center; }
+  .fc .fc-toolbar-title { font-size: 16px !important; text-align: center; }
+  .fc .fc-button { padding: 8px 14px !important; font-size: 13px !important; }
+  .fc .fc-col-header-cell-cushion { font-size: 11px !important; }
+  .fc .fc-daygrid-day-number { font-size: 13px !important; font-weight: 700; }
+  .fc .fc-daygrid-day-frame { min-height: 76px; }
+  .fc .fc-daygrid-event { font-size: 11px !important; }
+  .fc .fc-popover { left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important; }
+}
 `
 
 // ─────────────────────────────────────────
@@ -291,7 +317,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
     onEdit({
       id, title, description, aiSummary, category,
       hours: Number(hours) || 0, status, tags,
-      date: date ? date.split('T')[0] : new Date().toISOString().split('T')[0],
+      date: date ? date.split('T')[0] : ymd(),
       imageUrls, imageCount: imageUrls.length,
       startAt: props.startAt || null, endAt: props.endAt || null,
       dueDate: dueDate || null, priority,
@@ -331,8 +357,8 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
     border:'1px solid rgba(255,255,255,0.99)', overflowY:'auto', fontFamily:'inherit',
     boxShadow:'-12px 0 48px rgba(60,70,130,0.18)',
     ...(isMobile
-      ? { width:'100%', maxHeight:'92vh', borderRadius:'24px 24px 0 0', animation:'ts-sheet .26s cubic-bezier(.2,.8,.2,1)' }
-      : { width:'min(460px,100%)', height:'100vh', borderRadius:'24px 0 0 24px', animation:'ts-drawer .26s cubic-bezier(.2,.8,.2,1)' }),
+      ? { width:'100%', maxHeight:'92dvh', borderRadius:'24px 24px 0 0', animation:'ts-sheet .26s cubic-bezier(.2,.8,.2,1)' }
+      : { width:'min(460px,100%)', height:'100dvh', borderRadius:'24px 0 0 24px', animation:'ts-drawer .26s cubic-bezier(.2,.8,.2,1)' }),
   }
 
   const segBtn = (active, color) => ({
@@ -525,13 +551,13 @@ const round1 = v => Math.round(v * 10) / 10
 const hrsOf = l => Number(l.hours || l.hours_spent || 0)
 
 function CalendarStats({ logs }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = ymd()
   const scheduled = logs.filter(l => l.startAt)
   const done      = logs.filter(l => l.status === 'done')
   const unsched   = logs.filter(l => !l.startAt && l.status !== 'done')
   const plannedH  = round1(scheduled.reduce((s,l) => s + hrsOf(l), 0))
   const loggedH   = round1(done.reduce((s,l) => s + hrsOf(l), 0))
-  const todayH    = round1(scheduled.filter(l => String(l.startAt).split('T')[0] === today).reduce((s,l)=>s+hrsOf(l),0))
+  const todayH    = round1(scheduled.filter(l => ymd(new Date(l.startAt)) === today).reduce((s,l)=>s+hrsOf(l),0))
 
   const health = todayH <= 6
     ? { label:'🟢 พอดี',     color:'#10B981' }
@@ -586,7 +612,7 @@ function CalendarAnalytics({ logs }) {
   const DOW = ['จ','อ','พ','พฤ','ศ','ส','อา']
   const days = DOW.map((label,i) => {
     const d = new Date(wkStart); d.setDate(d.getDate() + i)
-    const key = d.toISOString().split('T')[0]
+    const key = ymd(d)
     const hours = round1(week.filter(l => l.date === key).reduce((s,l) => s + hrsOf(l), 0))
     return { label, hours }
   })
@@ -601,7 +627,7 @@ function CalendarAnalytics({ logs }) {
   const avgDaily = workDays ? round1(plannedH / workDays) : 0
   const total = week.length, doneN = week.filter(l => l.status === 'done').length
   const completionRate = total ? Math.round(doneN / total * 100) : 0
-  const today = new Date().toISOString().split('T')[0]
+  const today = ymd()
   const overdue = all.filter(l => l.status !== 'done' && l.dueDate && l.dueDate < today).length
 
   const insights = [
@@ -982,7 +1008,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       hours:       Number(editData.hours) || 0,
       status:      safe(editData.status, 'done'),
       tags:        Array.isArray(editData.tags) ? editData.tags : [],
-      date:        safe(editData.date, new Date().toISOString().split('T')[0]),
+      date:        safe(editData.date, ymd()),
       imageUrls:   Array.isArray(editData.imageUrls) ? editData.imageUrls : [],
       imageCount:  (editData.imageUrls || []).length,
       // Preserve scheduling so editing via the form doesn't unschedule the task.
@@ -998,29 +1024,38 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
       <style>{CAL_CSS}</style>
 
       {/* Page header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:22, flexWrap:'wrap', gap:12 }}>
-        <div>
-          <div style={{ fontSize:22, fontWeight:700, color:'#1a1a2e' }}>Calendar</div>
-          <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>วางแผนงานแบบ time-blocking · ลากงานมาวางบนตารางเวลา</div>
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          {[
-            { key:'dayGridMonth', label:'เดือน' },
-            { key:'timeGridWeek', label:'สัปดาห์' },
-            { key:'timeGridDay',  label:'วัน' },
-          ].map(v => (
-            <button key={v.key} onClick={() => { setView(v.key); calendarRef.current?.getApi().changeView(v.key) }} style={{
-              padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight: view===v.key?700:500,
-              border:'1px solid '+(view===v.key?'rgba(108,99,255,0.28)':'rgba(200,210,240,0.5)'),
-              background: view===v.key?'rgba(108,99,255,0.12)':'rgba(255,255,255,0.65)',
-              color: view===v.key?'#6C63FF':'#6b7099',
-              cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
-            }}>{v.label}</button>
-          ))}
-          {showPanel && (
-            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
+      <div style={{ marginBottom:18 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+          <div>
+            <div style={{ fontSize:22, fontWeight:700, color:'#1a1a2e' }}>Calendar</div>
+            <div style={{ fontSize:13, color:'#9ca3af', marginTop:2 }}>วางแผนงานแบบ time-blocking · ลากงานมาวางบนตารางเวลา</div>
+          </div>
+          {!isMobile && showPanel && (
+            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ padding:'9px 18px', borderRadius:12, fontSize:13, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
           )}
-          <button onClick={() => onAddLog({ date: new Date().toISOString().split('T')[0], title:'', imageUrls:[] })} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#6C63FF,#9B8FFF)', border:'none', borderRadius:10, fontSize:13, fontWeight:700, color:'white', cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 12px rgba(108,99,255,0.3)' }}>+ เพิ่มงาน</button>
+        </div>
+
+        {/* View toggle — responsive segmented control (full-width on mobile) */}
+        <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap', alignItems:'center' }}>
+          <div style={{ display:'flex', gap:4, flex: isMobile ? '1 1 100%' : '0 0 auto', background:'rgba(255,255,255,0.55)', border:'1px solid rgba(200,210,240,0.5)', borderRadius:14, padding:4 }}>
+            {[
+              { key:'dayGridMonth', label:'เดือน' },
+              { key:'timeGridWeek', label:'สัปดาห์' },
+              { key:'timeGridDay',  label:'วัน' },
+            ].map(v => (
+              <button key={v.key} onClick={() => { setView(v.key); calendarRef.current?.getApi().changeView(v.key) }} style={{
+                flex:1, padding:'10px 16px', borderRadius:10, fontSize:14, fontWeight: view===v.key?700:600,
+                border:'none', whiteSpace:'nowrap', minWidth: isMobile ? 0 : 78,
+                background: view===v.key ? 'linear-gradient(135deg,#6C63FF,#9B8FFF)' : 'transparent',
+                color: view===v.key ? '#fff' : '#6b7099',
+                cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
+                boxShadow: view===v.key ? '0 2px 8px rgba(108,99,255,0.3)' : 'none',
+              }}>{v.label}</button>
+            ))}
+          </div>
+          {isMobile && showPanel && (
+            <button onClick={aiPlanDay} disabled={!!planPreview?.loading} style={{ flex:'1 1 100%', padding:'12px', borderRadius:12, fontSize:14, fontWeight:700, border:'1px solid rgba(108,99,255,0.3)', background:'rgba(108,99,255,0.1)', color:'#6C63FF', cursor:'pointer', fontFamily:'inherit' }}>🤖 จัดตารางให้</button>
+          )}
         </div>
       </div>
 
@@ -1052,7 +1087,11 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}
             eventReceive={handleEventReceive}
-            allDaySlot={false}
+            allDaySlot={true}
+            allDayText={'ทั้งวัน'}
+            navLinks={true}
+            navLinkDayClick={(date) => { setView('timeGridDay'); calendarRef.current?.getApi().changeView('timeGridDay', date) }}
+            moreLinkClick={(arg) => { setView('timeGridDay'); calendarRef.current?.getApi().changeView('timeGridDay', arg.date); return 'none' }}
             slotMinTime="06:00:00"
             slotMaxTime="23:00:00"
             slotDuration="00:30:00"

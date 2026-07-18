@@ -1,17 +1,63 @@
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
+import PwaRegister from "./components/PwaRegister"
+import InstallPrompt from "./components/InstallPrompt"
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] })
 
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://worklog-app-virid.vercel.app"
+const SITE_NAME = "StayScape"
+const SITE_DESC = "AI Work Management Platform"
+
 export const metadata = {
-  title: "StayScape — Work · Life · Balance",
-  description: "บันทึกงาน วิเคราะห์ด้วย AI จัดการชีวิตการทำงานอย่างสมดุล",
-  keywords: "worklog, AI, productivity, stayscape, freelance",
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESC,
+  applicationName: SITE_NAME,
+  manifest: "/manifest.json",
+  keywords: [
+    "StayScape", "AI work management", "worklog", "productivity",
+    "task management", "work journal", "บันทึกงาน", "จัดการงาน", "freelance",
+  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  // App Router file conventions (app/favicon.ico, app/icon.png, app/apple-icon.png)
+  // auto-generate the icon <link> tags — no manual icons map needed.
   openGraph: {
-    title: "StayScape",
-    description: "Work · Life · Balance — AI-powered work journal",
     type: "website",
+    siteName: SITE_NAME,
+    title: SITE_NAME,
+    description: SITE_DESC,
+    url: SITE_URL,
+    locale: "th_TH",
+    images: [
+      { url: "/og-image.jpg?v=2", width: 1200, height: 630, alt: `${SITE_NAME} — ${SITE_DESC}`, type: "image/jpeg" },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_NAME,
+    description: SITE_DESC,
+    images: ["/og-image.jpg?v=2"],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: SITE_NAME,
   },
 }
 
@@ -26,14 +72,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="th">
-      <head>
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-        <meta name="apple-mobile-web-app-capable" content="yes"/>
-        <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
-        <meta name="apple-mobile-web-app-title" content="StayScape"/>
-      </head>
-      <body className={`${geistSans.variable} ${geistMono.variable}`} style={{ overflowX:'hidden', maxWidth:'100vw' }}>
+      <body className={`${geistSans.variable} ${geistMono.variable}`} style={{ overflowX: "hidden", maxWidth: "100vw" }}>
         {children}
+        <PwaRegister />
+        <InstallPrompt />
       </body>
     </html>
   )

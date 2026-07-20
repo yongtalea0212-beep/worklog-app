@@ -5,6 +5,7 @@
 import {
   Document, Page, Text, View, StyleSheet, Font, Image, pdf
 } from '@react-pdf/renderer'
+import { getArtworkType } from './ArtworkTypeManager'
 
 Font.register({
   family: 'IBMPlexSansThai',
@@ -21,10 +22,7 @@ const F = 'IBMPlexSansThai'
 const ACCENT = '#6C63FF', PINK = '#EC4899', TEXT = '#1a1a2e', TEXT2 = '#6b7099', TEXT3 = '#9ca3af'
 const GREEN = '#10B981', AMBER = '#F59E0B'
 
-const AW_TYPE_LABEL = {
-  banner:'Banner', poster:'Poster', logo:'Logo', video:'Video', facebook:'Facebook',
-  motion:'Motion', brochure:'Brochure', website:'Website', ui:'UI', mockup:'Mockup', other:'อื่นๆ',
-}
+const AW_TYPE_LABEL = new Proxy({}, { get: (_, id) => getArtworkType(String(id)).label })
 const AW_ST_LABEL = { pending:'รอเริ่ม', doing:'กำลังทำ', done:'เสร็จ' }
 const AW_ST_COLOR = { pending:TEXT3, doing:AMBER, done:GREEN }
 

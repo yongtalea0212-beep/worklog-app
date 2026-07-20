@@ -5,6 +5,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell } from 'recharts'
+import { getArtworkType } from './ArtworkTypeManager'
 
 // ─────────────────────────────────────────
 // CONSTANTS
@@ -28,12 +29,8 @@ const CATS = [
 
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 
-// Artwork (ชิ้นงาน) labels — mirrors WorklogApp's ARTWORK_TYPES/AW_STATUS
-const AW_TYPES = {
-  banner:'🖼️ Banner', poster:'📃 Poster', logo:'✳️ Logo', video:'🎬 Video',
-  facebook:'📘 Facebook', motion:'🌀 Motion', brochure:'📑 Brochure',
-  website:'🌐 Website', ui:'📱 UI', mockup:'🧊 Mockup', other:'📌 อื่นๆ',
-}
+// Artwork (ชิ้นงาน) type labels come from the dynamic ArtworkTypeManager.
+const awTypeLabel = id => { const t = getArtworkType(id); return `${t.icon} ${t.label}` }
 const AW_ST = {
   pending:{ t:'📝 รอเริ่ม', c:'#9ca3af' },
   doing:  { t:'⏳ กำลังทำ', c:'#F59E0B' },
@@ -507,7 +504,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
                     <div key={a.id||i} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(108,99,255,0.05)', border:'1px solid rgba(108,99,255,0.12)', borderRadius:10, padding:'6px 10px', fontSize:12.5 }}>
                       {a.thumbnail && <img src={a.thumbnail} alt="" style={{ width:26, height:26, borderRadius:6, objectFit:'cover', flexShrink:0 }}/>}
                       <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#1a1a2e', fontWeight:500 }}>{a.title}</span>
-                      <span style={{ fontSize:10.5, color:'#9ca3af', flexShrink:0 }}>{AW_TYPES[a.type] || AW_TYPES.other}</span>
+                      <span style={{ fontSize:10.5, color:'#9ca3af', flexShrink:0 }}>{awTypeLabel(a.type)}</span>
                       <span style={{ fontSize:10.5, fontWeight:700, color:s.c, flexShrink:0 }}>{s.t}</span>
                     </div>
                   )

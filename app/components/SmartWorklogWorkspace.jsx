@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, useRef } from 'react'
+import { useArtworkTypes, getArtworkType } from './ArtworkTypeManager'
 
 // ─────────────────────────────────────────
 // CONSTANTS
@@ -24,20 +25,7 @@ const CATS = (() => {
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 const HOURS_OPT = [0.5,1,1.5,2,3,4,5,6,8]
 
-// Artwork (ชิ้นงาน) — mirrors WorklogApp's ARTWORK_TYPES/AW_STATUS
-const AW_TYPES = [
-  { id:'banner',   label:'Banner',   icon:'🖼️' },
-  { id:'poster',   label:'Poster',   icon:'📃' },
-  { id:'logo',     label:'Logo',     icon:'✳️' },
-  { id:'video',    label:'Video',    icon:'🎬' },
-  { id:'facebook', label:'Facebook', icon:'📘' },
-  { id:'motion',   label:'Motion',   icon:'🌀' },
-  { id:'brochure', label:'Brochure', icon:'📑' },
-  { id:'website',  label:'Website',  icon:'🌐' },
-  { id:'ui',       label:'UI',       icon:'📱' },
-  { id:'mockup',   label:'Mockup',   icon:'🧊' },
-  { id:'other',    label:'อื่นๆ',    icon:'📌' },
-]
+// Artwork (ชิ้นงาน) types are dynamic (ArtworkTypeManager); statuses are fixed.
 const AW_STATUS = {
   pending: { label:'📝 รอเริ่ม',  color:'#9ca3af' },
   doing:   { label:'⏳ กำลังทำ', color:'#F59E0B' },
@@ -628,8 +616,9 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   }
 
   // ── Artwork rows (ชิ้นงาน) ──
+  const { active: awTypes } = useArtworkTypes()
   const aws = form.artworks || []
-  const addAw = () => set('artworks', [...aws, { title:'', type:'banner', status:'pending' }])
+  const addAw = () => set('artworks', [...aws, { title:'', type:(awTypes[0]?.id)||'other', status:'pending' }])
   const setAw = (i, k, v) => set('artworks', aws.map((a, j) => j===i ? { ...a, [k]: v } : a))
   const removeAw = i => set('artworks', aws.filter((_, j) => j!==i))
   const awFileRef = useRef()
@@ -850,13 +839,17 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                     <div style={{ display:'flex', gap:6 }}>
                       <select className="ww-input" value={a.type} onChange={e => setAw(i, 'type', e.target.value)}
                         style={{ flex:1, padding:'6px 8px', fontSize:12 }}>
-                        {AW_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                        {awTypes.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                        {a.type && !awTypes.find(t=>t.id===a.type) && <option value={a.type}>{getArtworkType(a.type).icon} {getArtworkType(a.type).label}</option>}
                       </select>
                       <select className="ww-input" value={a.status} onChange={e => setAw(i, 'status', e.target.value)}
                         style={{ flex:1, padding:'6px 8px', fontSize:12, color:AW_STATUS[a.status]?.color, fontWeight:600 }}>
                         {Object.entries(AW_STATUS).map(([id, s]) => <option key={id} value={id}>{s.label}</option>)}
                       </select>
                     </div>
+                    {getArtworkType(a.type).description && (
+                      <div style={{ fontSize:10.5, color:'#9ca3af', marginTop:5, paddingLeft:2 }}>💡 {getArtworkType(a.type).description}</div>
+                    )}
                   </div>
                 ))}
                 <button onClick={addAw}

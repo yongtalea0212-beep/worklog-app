@@ -12,6 +12,7 @@ import PresentationStudio from './PresentationStudio'
 import MobileNav from './MobileNav'
 import ProfilePage from './ProfilePage'
 import CategoryManager, { useCategories } from './CategoryManager'
+import ArtworkTypeManager, { useArtworkTypes, getArtworkType, activeArtworkTypes } from './ArtworkTypeManager'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -942,21 +943,8 @@ const SAMPLE = [
 ]
 const HOURS_OPT = [0.5,1,1.5,2,3,4,5,6,8]
 
-// ── Artwork (ชิ้นงาน) inside a task ──
-const ARTWORK_TYPES = [
-  { id:'banner',   label:'Banner',   icon:'🖼️' },
-  { id:'poster',   label:'Poster',   icon:'📃' },
-  { id:'logo',     label:'Logo',     icon:'✳️' },
-  { id:'video',    label:'Video',    icon:'🎬' },
-  { id:'facebook', label:'Facebook', icon:'📘' },
-  { id:'motion',   label:'Motion',   icon:'🌀' },
-  { id:'brochure', label:'Brochure', icon:'📑' },
-  { id:'website',  label:'Website',  icon:'🌐' },
-  { id:'ui',       label:'UI',       icon:'📱' },
-  { id:'mockup',   label:'Mockup',   icon:'🧊' },
-  { id:'other',    label:'อื่นๆ',    icon:'📌' },
-]
-const getAwType = id => ARTWORK_TYPES.find(t=>t.id===id) || ARTWORK_TYPES[ARTWORK_TYPES.length-1]
+// ── Artwork (ชิ้นงาน) inside a task ── types are now dynamic (ArtworkTypeManager)
+const getAwType = id => getArtworkType(id)
 const AW_STATUS = {
   pending: { label:'📝 รอเริ่ม',  color:'#9ca3af' },
   doing:   { label:'⏳ กำลังทำ', color:'#F59E0B' },
@@ -1214,8 +1202,9 @@ function LogForm({ initial, onSave, onCancel }) {
   }
 
   // ── Artwork rows (ชิ้นงาน) ──
+  const { active: awTypes } = useArtworkTypes()
   const aws = form.artworks || []
-  const addAw = () => set("artworks", [...aws, { title:"", type:"banner", status:"pending" }])
+  const addAw = () => set("artworks", [...aws, { title:"", type:(awTypes[0]?.id)||"other", status:"pending" }])
   const setAw = (i,k,v) => set("artworks", aws.map((a,j)=> j===i ? {...a,[k]:v} : a))
   const removeAw = i => set("artworks", aws.filter((_,j)=>j!==i))
   const awFileRef = useRef()
@@ -1327,7 +1316,8 @@ function LogForm({ initial, onSave, onCancel }) {
               <input className="input" placeholder="ชื่อชิ้นงาน เช่น Facebook Cover" value={a.title}
                 onChange={e=>setAw(i,"title",e.target.value)} style={{flex:isMobile?"1 1 100%":2,minWidth:120,padding:"7px 10px",fontSize:13}}/>
               <select className="input" value={a.type} onChange={e=>setAw(i,"type",e.target.value)} style={{flex:1,minWidth:104,padding:"7px 8px",fontSize:12.5}}>
-                {ARTWORK_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                {awTypes.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                {a.type && !awTypes.find(t=>t.id===a.type) && <option value={a.type}>{getAwType(a.type).icon} {getAwType(a.type).label}</option>}
               </select>
               <select className="input" value={a.status} onChange={e=>setAw(i,"status",e.target.value)}
                 style={{flex:1,minWidth:96,padding:"7px 8px",fontSize:12.5,color:AW_STATUS[a.status]?.color,fontWeight:600}}>
@@ -1897,6 +1887,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
   const [awTypeFilter, setAwTypeFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [isMobile, setIsMobile] = useState(false)
+  const { active: awTypesList } = useArtworkTypes()
 
   useEffect(()=>{
     const check=()=>setIsMobile(window.innerWidth<=768)
@@ -1949,7 +1940,7 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
         <select className="input" value={awTypeFilter} onChange={e=>setAwTypeFilter(e.target.value)}
           style={{width:"auto",minWidth:150,fontWeight:600,color:awTypeFilter!=="all"?"#6C63FF":undefined}}>
           <option value="all">🖼️ ทุกประเภทชิ้นงาน</option>
-          {ARTWORK_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+          {awTypesList.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
         </select>
         {(q||awTypeFilter!=="all") && <span style={{fontSize:11.5,color:"var(--text3)"}}>พบ {filtered.length} งาน</span>}
       </div>
@@ -2243,6 +2234,13 @@ export default function App(){
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
   const [showCatManager,setShowCatManager]=useState(false)
+  const [showArtManager,setShowArtManager]=useState(false)
+  // Reassign artworks from one type id to another (or 'other') when a type is deleted.
+  async function reassignArtworkType(fromId, toId){
+    const target = toId || 'other'
+    setLogs(ls => ls.map(l => ({ ...l, artworks:(l.artworks||[]).map(a => a.type===fromId ? {...a, type:target} : a) })))
+    try { await supabase.from('artworks').update({ type:target }).eq('type', fromId) } catch {}
+  }
   const { cats:DYNAMIC_CATS = [] } = useCategories()
   // Cache for module-level getCat
   if(typeof window !== 'undefined' && DYNAMIC_CATS.length > 0) window.__stayscapeCats = DYNAMIC_CATS
@@ -2555,6 +2553,7 @@ export default function App(){
   const quickActions=[
     {id:"report",       icon:"✨", label:"Generate Report",   action:()=>setShowReport(true)},
     {id:"categories",   icon:"🏷️", label:"จัดการหมวดหมู่",    action:()=>setShowCatManager(true)},
+    {id:"art-types",    icon:"🖼️", label:"จัดการประเภทชิ้นงาน", action:()=>setShowArtManager(true)},
     {id:"export-pdf",   icon:"📥", label:"Export PDF",         action:()=>showT("📥 Export — Phase E")},
     {id:"slides",       icon:"🎬", label:"Create Slides",       action:()=>setPage("presentation")},
     {id:"ai-sum",       icon:"🧠", label:"AI Summary",          action:()=>setPage("ai-assistant")},
@@ -2916,6 +2915,14 @@ export default function App(){
           <div className="modal-wrap" onClick={()=>setShowCatManager(false)}>
             <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:500}}>
               <CategoryManager onClose={()=>setShowCatManager(false)}/>
+            </div>
+          </div>
+        )}
+        {/* Artwork Type Manager Modal */}
+        {showArtManager&&(
+          <div className="modal-wrap" onClick={()=>setShowArtManager(false)}>
+            <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+              <ArtworkTypeManager onClose={()=>setShowArtManager(false)} logs={logs} onReassign={reassignArtworkType}/>
             </div>
           </div>
         )}

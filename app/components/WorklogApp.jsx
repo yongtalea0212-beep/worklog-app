@@ -1433,6 +1433,90 @@ function ReportModal({logs,onClose}){
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
+// Export Center card: Artwork Report with selectable period (Module: Export)
+function ArtworkExportCard({ logs, showT }){
+  const [mode, setMode] = useState('all')   // all | this | last | custom
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [busy, setBusy] = useState('')
+
+  const now = new Date()
+  const pad = n => String(n).padStart(2,'0')
+  const ymOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`
+  const lastM = new Date(now.getFullYear(), now.getMonth()-1, 15)
+
+  let range = { from:'', to:'' }
+  if (mode==='this')   range = { from:ymOf(now)+'-01',   to:ymOf(now)+'-31' }
+  if (mode==='last')   range = { from:ymOf(lastM)+'-01', to:ymOf(lastM)+'-31' }
+  if (mode==='custom') range = { from, to }
+
+  const filtered = logs.filter(l=>{
+    const d = l.date || ''
+    if (range.from && d < range.from) return false
+    if (range.to && d > range.to) return false
+    return true
+  })
+  const awStats = getArtworkStats(filtered)
+
+  const thMonth = d => d.toLocaleDateString('th-TH',{ month:'long', year:'numeric' })
+  const fmtD = s => { try { return new Date(s).toLocaleDateString('th-TH',{ day:'numeric', month:'short', year:'2-digit' }) } catch { return s } }
+  const periodLabel = mode==='all' ? 'ทั้งหมด'
+    : mode==='this' ? thMonth(now)
+    : mode==='last' ? thMonth(lastM)
+    : (from||to) ? `${from?fmtD(from):'…'} – ${to?fmtD(to):'…'}` : 'ทั้งหมด'
+
+  async function doExport(kind){
+    if (!filtered.length) { showT('⚠️ ไม่มีงานในช่วงเวลาที่เลือก'); return }
+    setBusy(kind)
+    try {
+      if (kind==='pdf') await downloadArtworkPDF(filtered, periodLabel)
+      else await downloadArtworkExcel(filtered, periodLabel)
+      showT('✓ ดาวน์โหลด Artwork Report แล้ว')
+    } catch { showT('⚠️ Export ไม่สำเร็จ') }
+    setBusy('')
+  }
+
+  const chip = (active) => ({
+    padding:'6px 13px', borderRadius:9, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:600,
+    border:'1.5px solid ' + (active ? '#6C63FF' : 'rgba(200,210,240,0.6)'),
+    background: active ? 'rgba(108,99,255,0.1)' : 'rgba(255,255,255,0.6)',
+    color: active ? '#6C63FF' : '#6b7099',
+  })
+
+  return (
+    <div className="card" style={{marginBottom:12}}>
+      <div style={{fontSize:14,fontWeight:600,color:"var(--text)",marginBottom:2}}>🖼️ Artwork Report</div>
+      <div style={{fontSize:12,color:"var(--text3)",marginBottom:12}}>งาน + ชิ้นงานทั้งหมด · จำนวนต่อประเภท · สถานะ · รูป Preview ขนาดใหญ่</div>
+
+      {/* Period picker */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+        {[['all','ทั้งหมด'],['this','เดือนนี้'],['last','เดือนที่แล้ว'],['custom','กำหนดเอง']].map(([k,l])=>(
+          <button key={k} onClick={()=>setMode(k)} style={chip(mode===k)}>{l}</button>
+        ))}
+      </div>
+      {mode==='custom' && (
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+          <label style={{fontSize:11.5,color:"var(--text3)",fontWeight:600}}>จาก</label>
+          <input className="input" type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{width:"auto",padding:"7px 10px"}}/>
+          <label style={{fontSize:11.5,color:"var(--text3)",fontWeight:600}}>ถึง</label>
+          <input className="input" type="date" value={to} onChange={e=>setTo(e.target.value)} style={{width:"auto",padding:"7px 10px"}}/>
+        </div>
+      )}
+
+      {/* Live preview of selection */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,background:"rgba(108,99,255,0.05)",border:"1px solid rgba(108,99,255,0.12)",borderRadius:12,padding:"10px 14px"}}>
+        <div style={{fontSize:12.5,color:"var(--text2)"}}>
+          <b style={{color:"#6C63FF"}}>{periodLabel}</b> · {filtered.length} งาน · {awStats.total} ชิ้นงาน · เสร็จ {awStats.done}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>doExport('pdf')} disabled={!!busy} className="btn btn-primary" style={{opacity:busy?0.6:1}}>{busy==='pdf'?'⏳ กำลังสร้าง...':'📄 PDF'}</button>
+          <button onClick={()=>doExport('xlsx')} disabled={!!busy} className="btn btn-ghost" style={{opacity:busy?0.6:1}}>{busy==='xlsx'?'⏳...':'📊 Excel'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DashboardPage({logs,onAdd,onReport}){
   const [isMobile,setIsMobile]=useState(false)
   useEffect(()=>{
@@ -2617,18 +2701,7 @@ export default function App(){
           </button>
         </div>
       </div>
-      <div className="card" style={{marginBottom:12}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-          <div>
-            <div style={{fontSize:14,fontWeight:600,color:"var(--text)",marginBottom:4}}>🖼️ Artwork Report</div>
-            <div style={{fontSize:12,color:"var(--text3)"}}>งาน + ชิ้นงานทั้งหมด · จำนวนต่อประเภท · สถานะ · รูป Preview</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={async()=>{ try{ await downloadArtworkPDF(logs) }catch(e){ showT('⚠️ Export PDF ไม่สำเร็จ') } }} className="btn btn-primary">📄 PDF</button>
-            <button onClick={async()=>{ try{ await downloadArtworkExcel(logs) }catch(e){ showT('⚠️ Export Excel ไม่สำเร็จ') } }} className="btn btn-ghost">📊 Excel</button>
-          </div>
-        </div>
-      </div>
+      <ArtworkExportCard logs={logs} showT={showT}/>
     </div>
   )
      case "presentation":

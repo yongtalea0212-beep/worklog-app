@@ -632,6 +632,21 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
   const addAw = () => set('artworks', [...aws, { title:'', type:'banner', status:'pending' }])
   const setAw = (i, k, v) => set('artworks', aws.map((a, j) => j===i ? { ...a, [k]: v } : a))
   const removeAw = i => set('artworks', aws.filter((_, j) => j!==i))
+  const awFileRef = useRef()
+  const [awUploadIdx, setAwUploadIdx] = useState(null)
+  async function handleAwFile(files) {
+    const file = Array.from(files)[0]
+    const i = awUploadIdx
+    if (!file || i == null) return
+    if (onUploadFiles) {
+      const urls = await onUploadFiles([file], form.category, () => {})
+      if (urls?.[0]) set('artworks', (form.artworks||[]).map((a, j) => j===i ? { ...a, thumbnail: urls[0], file_url: urls[0] } : a))
+    } else {
+      const url = URL.createObjectURL(file)
+      set('artworks', (form.artworks||[]).map((a, j) => j===i ? { ...a, thumbnail: url } : a))
+    }
+    setAwUploadIdx(null)
+  }
 
   async function handleSave() {
     if (!(form.title || '').trim()) return
@@ -821,6 +836,11 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                   <div key={i} style={{ background:'rgba(108,99,255,0.045)', border:'1px solid rgba(108,99,255,0.14)', borderRadius:12, padding:'9px 11px' }}>
                     <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
                       <span style={{ fontSize:11, fontWeight:800, color:'#6C63FF', flexShrink:0 }}>#{i+1}</span>
+                      {a.thumbnail
+                        ? <img src={a.thumbnail} alt="" onClick={() => { setAwUploadIdx(i); awFileRef.current?.click() }}
+                            style={{ width:32, height:32, borderRadius:8, objectFit:'cover', flexShrink:0, cursor:'pointer', border:'1px solid rgba(108,99,255,0.25)' }}/>
+                        : <button onClick={() => { setAwUploadIdx(i); awFileRef.current?.click() }} title="แนบรูป Preview"
+                            style={{ width:32, height:32, borderRadius:8, border:'1.5px dashed rgba(108,99,255,0.35)', background:'rgba(108,99,255,0.04)', color:'#6C63FF', fontSize:13, cursor:'pointer', flexShrink:0 }}>📎</button>}
                       <input className="ww-input" placeholder="ชื่อชิ้นงาน เช่น Facebook Cover"
                         value={a.title} onChange={e => setAw(i, 'title', e.target.value)}
                         style={{ flex:1, padding:'7px 10px', fontSize:13 }}/>
@@ -846,6 +866,8 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                 {aws.length === 0 && (
                   <div style={{ fontSize:11, color:'#9ca3af' }}>ไม่เพิ่มก็ได้ — งานที่ไม่มีชิ้นงานจะนับเป็น 1 ชิ้นอัตโนมัติ</div>
                 )}
+                <input ref={awFileRef} type="file" accept="image/*" style={{ display:'none' }}
+                  onChange={e => { handleAwFile(e.target.files); e.target.value = '' }}/>
               </div>
             </div>
 

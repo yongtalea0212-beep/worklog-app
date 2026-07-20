@@ -23,6 +23,26 @@ const CATS = (() => {
 })()
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 const HOURS_OPT = [0.5,1,1.5,2,3,4,5,6,8]
+
+// Artwork (ชิ้นงาน) — mirrors WorklogApp's ARTWORK_TYPES/AW_STATUS
+const AW_TYPES = [
+  { id:'banner',   label:'Banner',   icon:'🖼️' },
+  { id:'poster',   label:'Poster',   icon:'📃' },
+  { id:'logo',     label:'Logo',     icon:'✳️' },
+  { id:'video',    label:'Video',    icon:'🎬' },
+  { id:'facebook', label:'Facebook', icon:'📘' },
+  { id:'motion',   label:'Motion',   icon:'🌀' },
+  { id:'brochure', label:'Brochure', icon:'📑' },
+  { id:'website',  label:'Website',  icon:'🌐' },
+  { id:'ui',       label:'UI',       icon:'📱' },
+  { id:'mockup',   label:'Mockup',   icon:'🧊' },
+  { id:'other',    label:'อื่นๆ',    icon:'📌' },
+]
+const AW_STATUS = {
+  pending: { label:'📝 รอเริ่ม',  color:'#9ca3af' },
+  doing:   { label:'⏳ กำลังทำ', color:'#F59E0B' },
+  done:    { label:'✅ เสร็จ',    color:'#10B981' },
+}
 const today = () => new Date().toISOString().split('T')[0]
 const fmtTimer = s => {
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60
@@ -498,6 +518,7 @@ function AIPanel({ form, onApplySummary, onApplyCategory, onApplyTags }) {
           { label:'มีรายละเอียด', done: !!form.description?.trim()    },
           { label:'มี AI Summary', done: !!form.aiSummary?.trim()      },
           { label:'มีหมวดหมู่',   done: form.category !== 'other'     },
+          { label:'มีชิ้นงาน',    done: (form.artworks?.length||0)>0  },
           { label:'มีรูปภาพ',     done: (form.imageUrls?.length||0)>0 },
           { label:'มีแท็ก',       done: (form.tags?.length||0)>0      },
         ].map((s,i) => (
@@ -531,10 +552,10 @@ function AIPanel({ form, onApplySummary, onApplyCategory, onApplyTags }) {
 // MAIN — รับ onUpload จาก parent แทนการ import supabase
 // ─────────────────────────────────────────
 export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUploadFiles }) {
-  const [form, setForm] = useState(initial || {
+  const [form, setForm] = useState(initial ? { artworks: [], ...initial } : {
     title: '', description: '', aiSummary: '',
     category: 'graphic', hours: 2, status: 'done',
-    tags: [], date: today(), imageUrls: [], imageCount: 0,
+    tags: [], date: today(), imageUrls: [], imageCount: 0, artworks: [],
   })
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
@@ -605,6 +626,12 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
     if (t && !form.tags.includes(t)) set('tags', [...form.tags, t])
     setTagInput('')
   }
+
+  // ── Artwork rows (ชิ้นงาน) ──
+  const aws = form.artworks || []
+  const addAw = () => set('artworks', [...aws, { title:'', type:'banner', status:'pending' }])
+  const setAw = (i, k, v) => set('artworks', aws.map((a, j) => j===i ? { ...a, [k]: v } : a))
+  const removeAw = i => set('artworks', aws.filter((_, j) => j!==i))
 
   async function handleSave() {
     if (!(form.title || '').trim()) return
@@ -781,6 +808,44 @@ export default function SmartWorklogWorkspace({ initial, onSave, onCancel, onUpl
                     {form.category===c.id && <span style={{ marginLeft:'auto', fontSize:11 }}>✓</span>}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Artwork (ชิ้นงาน) — 1 task : N pieces */}
+            <div className="ww-glass" style={{ padding:20 }}>
+              <label className="ww-label">
+                🖼️ ชิ้นงาน (Artwork){aws.length > 0 ? ` · ${aws.length} ชิ้น` : ''}
+              </label>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {aws.map((a, i) => (
+                  <div key={i} style={{ background:'rgba(108,99,255,0.045)', border:'1px solid rgba(108,99,255,0.14)', borderRadius:12, padding:'9px 11px' }}>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
+                      <span style={{ fontSize:11, fontWeight:800, color:'#6C63FF', flexShrink:0 }}>#{i+1}</span>
+                      <input className="ww-input" placeholder="ชื่อชิ้นงาน เช่น Facebook Cover"
+                        value={a.title} onChange={e => setAw(i, 'title', e.target.value)}
+                        style={{ flex:1, padding:'7px 10px', fontSize:13 }}/>
+                      <button onClick={() => removeAw(i)} title="ลบชิ้นงาน"
+                        style={{ width:26, height:26, borderRadius:8, border:'none', background:'rgba(239,68,68,0.09)', color:'#EF4444', fontSize:13, cursor:'pointer', flexShrink:0 }}>×</button>
+                    </div>
+                    <div style={{ display:'flex', gap:6 }}>
+                      <select className="ww-input" value={a.type} onChange={e => setAw(i, 'type', e.target.value)}
+                        style={{ flex:1, padding:'6px 8px', fontSize:12 }}>
+                        {AW_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                      </select>
+                      <select className="ww-input" value={a.status} onChange={e => setAw(i, 'status', e.target.value)}
+                        style={{ flex:1, padding:'6px 8px', fontSize:12, color:AW_STATUS[a.status]?.color, fontWeight:600 }}>
+                        {Object.entries(AW_STATUS).map(([id, s]) => <option key={id} value={id}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addAw}
+                  style={{ padding:'9px 14px', borderRadius:12, border:'1.5px dashed rgba(108,99,255,0.4)', background:'rgba(108,99,255,0.04)', color:'#6C63FF', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                  + เพิ่มชิ้นงาน
+                </button>
+                {aws.length === 0 && (
+                  <div style={{ fontSize:11, color:'#9ca3af' }}>ไม่เพิ่มก็ได้ — งานที่ไม่มีชิ้นงานจะนับเป็น 1 ชิ้นอัตโนมัติ</div>
+                )}
               </div>
             </div>
 

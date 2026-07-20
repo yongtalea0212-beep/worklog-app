@@ -2030,10 +2030,15 @@ function ComingSoonPage({icon,title,desc,features=[]}){
 // Shared read-only portfolio view (used by in-app page AND public /portfolio/[id])
 function PortfolioView({logs, profile, embedded}){
   const stats=getStats(logs)
+  const aw=getArtworkStats(logs)
   const catData=Object.entries(stats.byCategory).map(([id,count])=>({cat:getCat(id),count})).sort((a,b)=>b.count-a.count)
   const maxCat=Math.max(1,...catData.map(c=>c.count))
+  const maxAwType=Math.max(1,...aw.topTypes.map(t=>t.count))
   const gallery=[]
-  logs.forEach(l=>(l.imageUrls||[]).forEach(u=>{ if(u) gallery.push({url:u,title:l.title}) }))
+  logs.forEach(l=>{
+    (l.imageUrls||[]).forEach(u=>{ if(u) gallery.push({url:u,title:l.title}) })
+    ;(l.artworks||[]).forEach(a=>{ if(a.thumbnail) gallery.push({url:a.thumbnail,title:a.title||l.title}) })
+  })
   const featured=logs.filter(l=>(l.imageUrls||[]).length>0).slice(0,6)
   const name=profile.name||'My Portfolio'
   const initials=(name||'U').trim()[0]?.toUpperCase()||'U'
@@ -2062,8 +2067,13 @@ function PortfolioView({logs, profile, embedded}){
       </div>
 
       {/* Stats */}
-      <div className="g3" style={{marginBottom:16}}>
-        {[{icon:'✦',l:'ผลงาน',v:stats.total,c:'#6C63FF'},{icon:'⏱',l:'ชั่วโมง',v:stats.hours,c:'#06B6D4'},{icon:'✓',l:'สำเร็จ',v:`${stats.completionRate}%`,c:'#10B981'}].map(s=>(
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10,marginBottom:16}}>
+        {[
+          {icon:'✦',l:'ผลงาน',v:stats.total,c:'#6C63FF'},
+          {icon:'🖼️',l:'ชิ้นงาน',v:aw.total,c:'#EC4899'},
+          {icon:'⏱',l:'ชั่วโมง',v:stats.hours,c:'#06B6D4'},
+          {icon:'✓',l:'สำเร็จ',v:`${stats.completionRate}%`,c:'#10B981'},
+        ].map(s=>(
           <div key={s.l} className="card" style={{textAlign:'center',padding:16}}>
             <div style={{fontSize:20,marginBottom:6}}>{s.icon}</div>
             <div style={{fontSize:24,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -2086,6 +2096,27 @@ function PortfolioView({logs, profile, embedded}){
                 </div>
                 <div style={{height:8,borderRadius:8,background:'rgba(108,99,255,0.08)',overflow:'hidden'}}>
                   <div style={{height:'100%',width:`${Math.round((count/maxCat)*100)}%`,background:`linear-gradient(90deg,${cat.color},${cat.color}aa)`,borderRadius:8}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Artwork by type */}
+      {aw.topTypes.length>0&&(
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-t">🖼️ ชิ้นงานตามประเภท ({aw.total} ชิ้น)</div>
+          <div style={{display:'flex',flexDirection:'column',gap:11}}>
+            {aw.topTypes.map(t=>(
+              <div key={t.id}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{fontSize:14}}>{t.icon}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,color:'var(--text)'}}>{t.label}</span>
+                  <span style={{marginLeft:'auto',fontSize:11,fontWeight:700,color:'#EC4899'}}>{t.count} ชิ้น</span>
+                </div>
+                <div style={{height:8,borderRadius:8,background:'rgba(236,72,153,0.08)',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${Math.round((t.count/maxAwType)*100)}%`,background:'linear-gradient(90deg,#6C63FF,#EC4899)',borderRadius:8}}/>
                 </div>
               </div>
             ))}

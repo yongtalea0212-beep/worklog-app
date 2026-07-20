@@ -12,8 +12,10 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''
 const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const APP_URL       = process.env.NEXT_PUBLIC_APP_URL || 'https://worklog-app-virid.vercel.app'
-const MASCOT_FACE      = APP_URL + '/mascot-face.png?v=2'
-const MASCOT_HAPPY     = APP_URL + '/mascot-happy.png?v=2'
+// New StayScape hood mascot (replaces the old robot). New filenames avoid LINE's image cache.
+const MASCOT_FACE      = APP_URL + '/mascot-s-neutral.png?v=1'
+const MASCOT_HAPPY     = APP_URL + '/mascot-s-happy.png?v=1'
+const MASCOT_NOTE      = APP_URL + '/mascot-s-note.png?v=1'
 const MASCOT_HERO_WAVE = APP_URL + '/mascot-hero-wave.png?v=2'
 
 // Fallbacks keep `next build` page-data collection from throwing when env is
@@ -805,6 +807,12 @@ function msgStatusUpdate(log, trigger) {
   }
   const st = STATUS[log.status] || STATUS.draft
   const triggerLabel = TRIGGERS[trigger] || '📋 StayScape'
+  // Mascot by outcome: done → happy(checkmark), otherwise → note(pencil)
+  const mascot = (log.status === 'done' || trigger === 'completed') ? MASCOT_HAPPY : MASCOT_NOTE
+  // Artwork (ชิ้นงาน) summary — type ids can't be resolved server-side, so show titles
+  const aws = Array.isArray(log.artworks) ? log.artworks : []
+  const awDone = aws.filter(a => a.status === 'done').length
+  const awEmoji = s => (s === 'done' ? '✅' : s === 'doing' ? '🔄' : '⚪')
   const dateStr = log.date
     ? new Date(log.date).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
     : new Date().toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short',year:'2-digit'})
@@ -820,7 +828,7 @@ function msgStatusUpdate(log, trigger) {
         type: 'box', layout: 'horizontal', paddingAll: '14px', spacing:'md',
         backgroundColor: st.bg,
         contents: [
-          { type:'image', url: log.status === 'done' ? MASCOT_HAPPY : MASCOT_FACE, size:'48px', aspectMode:'cover', flex:0, gravity:'top' },
+          { type:'image', url: mascot, size:'52px', aspectMode:'fit', flex:0, gravity:'top' },
           { type:'box', layout:'vertical', flex:1, contents:[
             {
               type: 'box', layout: 'horizontal',
@@ -854,6 +862,21 @@ function msgStatusUpdate(log, trigger) {
                   { type:'text', text:'AI Summary', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
                 ]},
               { type:'text', text: log.aiSummary, size:'xs', color:BRAND.textSub, wrap:true, margin:'sm' },
+            ]
+          }] : []),
+          // Artwork (ชิ้นงาน) summary
+          ...(aws.length ? [{
+            type:'box', layout:'vertical', cornerRadius:'10px', paddingAll:'10px', spacing:'xs',
+            backgroundColor:'#F3EEFF',
+            contents:[
+              { type:'box', layout:'horizontal', contents:[
+                { type:'text', text:'🖼️ ชิ้นงาน', size:'xs', color:BRAND.purple, weight:'bold', flex:1 },
+                { type:'text', text: awDone+'/'+aws.length+' เสร็จ', size:'xs', color:BRAND.purple, weight:'bold', align:'end', flex:0 },
+              ]},
+              ...aws.slice(0,4).map(a => ({
+                type:'text', text: awEmoji(a.status)+' '+(a.title||'ชิ้นงาน'), size:'xxs', color:BRAND.textSub, wrap:true,
+              })),
+              ...(aws.length > 4 ? [{ type:'text', text:'+ อีก '+(aws.length-4)+' ชิ้น', size:'xxs', color:BRAND.textMuted }] : []),
             ]
           }] : []),
           // Meta row

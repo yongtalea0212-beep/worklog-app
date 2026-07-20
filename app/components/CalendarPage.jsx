@@ -292,6 +292,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
   const [status, setStatus] = useState(safe(props.status, 'draft'))
   const [priority, setPriority] = useState(safe(props.priority, 'medium'))
   const [dueDate, setDueDate] = useState(props.dueDate || '')
+  const [tab, setTab] = useState('overview')   // overview | artwork | files | timeline
 
   const imageUrls = Array.isArray(props.imageUrls) ? props.imageUrls : []
 
@@ -412,9 +413,28 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
           <div style={{ fontSize:19, fontWeight:700, color:'#1a1a2e', lineHeight:1.3, marginBottom:6 }}>{title}</div>
           <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:4 }}>📅 {fmtDate(date)}</div>
           {timeRange
-            ? <div style={{ fontSize:12.5, color:cat.color, fontWeight:600, marginBottom:16 }}>🕐 {timeRange}</div>
-            : <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:16 }}>🕐 ยังไม่จัดเวลา</div>}
+            ? <div style={{ fontSize:12.5, color:cat.color, fontWeight:600, marginBottom:12 }}>🕐 {timeRange}</div>
+            : <div style={{ fontSize:12.5, color:'#9ca3af', marginBottom:12 }}>🕐 ยังไม่จัดเวลา</div>}
 
+          {/* Tabs */}
+          <div style={{ display:'flex', gap:4, marginBottom:14, background:'rgba(108,99,255,0.06)', padding:4, borderRadius:12 }}>
+            {[
+              ['overview', 'ภาพรวม'],
+              ['artwork', `🖼️ ชิ้นงาน${artworks.length ? ` ${artworks.length}` : ''}`],
+              ['files', `ไฟล์${imageUrls.length ? ` ${imageUrls.length}` : ''}`],
+              ['timeline', 'Timeline'],
+            ].map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)} style={{
+                flex:1, padding:'7px 4px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'inherit',
+                fontSize:11.5, fontWeight:tab===k?700:500, whiteSpace:'nowrap',
+                background: tab===k ? '#fff' : 'transparent',
+                color: tab===k ? '#6C63FF' : '#6b7099',
+                boxShadow: tab===k ? '0 1px 5px rgba(108,99,255,0.18)' : 'none',
+              }}>{l}</button>
+            ))}
+          </div>
+
+          {tab==='overview' && (<>
           {/* Inline editors */}
           <div style={{ background:'rgba(248,249,255,0.7)', border:'1px solid rgba(200,210,240,0.5)', borderRadius:14, padding:14, marginBottom:14 }}>
             <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7 }}>สถานะ</div>
@@ -446,17 +466,6 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
             ))}
           </div>
 
-          {/* Attachments */}
-          {hasImages && (
-            <div style={{ display:'flex', gap:6, marginBottom:14, overflowX:'auto', paddingBottom:2 }}>
-              {imageUrls.map((url,i) => (
-                <div key={i} onClick={()=>{setImgIndex(i);setFullscreen(true)}} style={{ width:54, height:54, borderRadius:9, overflow:'hidden', border:'2px solid '+(i===imgIndex?cat.color:'rgba(200,210,240,0.5)'), cursor:'pointer', flexShrink:0 }}>
-                  <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} loading="lazy" />
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* AI summary / description */}
           {aiSummary && (
             <div style={{ background:'linear-gradient(135deg,rgba(108,99,255,0.07),rgba(167,139,250,0.04))', border:'1px solid rgba(108,99,255,0.16)', borderRadius:13, padding:'12px 14px', marginBottom:12 }}>
@@ -471,8 +480,22 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
             </div>
           )}
 
-          {/* Artwork list (ชิ้นงาน) */}
-          {artworks.length > 0 && (
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:16 }}>
+              {tags.map((t,i) => <span key={'ov'+i} style={{ background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.18)', color:'#6C63FF', fontSize:11, fontWeight:500, padding:'3px 9px', borderRadius:20 }}>#{t}</span>)}
+            </div>
+          )}
+          </>)}
+
+          {/* ── Tab: ชิ้นงาน ── */}
+          {tab==='artwork' && artworks.length === 0 && (
+            <div style={{ textAlign:'center', padding:'26px 10px', color:'#9ca3af', fontSize:12.5, marginBottom:16 }}>
+              ยังไม่มีชิ้นงาน — กด "แก้ไขแบบเต็ม" เพื่อเพิ่มชิ้นงานให้งานนี้<br/>
+              <span style={{ fontSize:11 }}>(งานที่ไม่มีชิ้นงานนับเป็น 1 ชิ้นใน KPI)</span>
+            </div>
+          )}
+          {tab==='artwork' && artworks.length > 0 && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7, textTransform:'uppercase' }}>
                 🖼️ ชิ้นงาน ({artworks.filter(a=>a.status==='done').length}/{artworks.length})
@@ -482,6 +505,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
                   const s = AW_ST[a.status] || AW_ST.pending
                   return (
                     <div key={a.id||i} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(108,99,255,0.05)', border:'1px solid rgba(108,99,255,0.12)', borderRadius:10, padding:'6px 10px', fontSize:12.5 }}>
+                      {a.thumbnail && <img src={a.thumbnail} alt="" style={{ width:26, height:26, borderRadius:6, objectFit:'cover', flexShrink:0 }}/>}
                       <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#1a1a2e', fontWeight:500 }}>{a.title}</span>
                       <span style={{ fontSize:10.5, color:'#9ca3af', flexShrink:0 }}>{AW_TYPES[a.type] || AW_TYPES.other}</span>
                       <span style={{ fontSize:10.5, fontWeight:700, color:s.c, flexShrink:0 }}>{s.t}</span>
@@ -496,10 +520,46 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
             </div>
           )}
 
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:16 }}>
-              {tags.map((t,i) => <span key={i} style={{ background:'rgba(108,99,255,0.09)', border:'1px solid rgba(108,99,255,0.18)', color:'#6C63FF', fontSize:11, fontWeight:500, padding:'3px 9px', borderRadius:20 }}>#{t}</span>)}
+          {/* ── Tab: ไฟล์ ── */}
+          {tab==='files' && (
+            hasImages ? (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(84px,1fr))', gap:8, marginBottom:16 }}>
+                {imageUrls.map((url,i) => (
+                  <div key={i} onClick={()=>{setImgIndex(i);setFullscreen(true)}} style={{ aspectRatio:'1', borderRadius:10, overflow:'hidden', border:'2px solid '+(i===imgIndex?cat.color:'rgba(200,210,240,0.5)'), cursor:'pointer' }}>
+                    <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} loading="lazy" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign:'center', padding:'26px 10px', color:'#9ca3af', fontSize:12.5, marginBottom:16 }}>
+                ยังไม่มีไฟล์แนบ — เพิ่มได้จาก "แก้ไขแบบเต็ม"
+              </div>
+            )
+          )}
+
+          {/* ── Tab: Timeline ── */}
+          {tab==='timeline' && (
+            <div style={{ marginBottom:16 }}>
+              {[
+                { icon:'📅', label:'วันที่งาน', value: fmtDate(date), on:true },
+                { icon:'🕐', label:'ช่วงเวลา', value: timeRange || 'ยังไม่จัดเวลา', on: !!timeRange },
+                { icon:'⏰', label:'กำหนดส่ง', value: dueDate ? fmtDate(dueDate) + (dl ? ` · ${dl.label}` : '') : 'ไม่ได้ตั้ง', on: !!dueDate },
+                { icon:'🖼️', label:'ชิ้นงานเสร็จ', value: artworks.length ? `${artworks.filter(a=>a.status==='done').length}/${artworks.length} ชิ้น` : '—', on: artworks.length>0 },
+                { icon: status==='done' ? '✅' : status==='in_progress' ? '🔄' : '📝', label:'สถานะปัจจุบัน',
+                  value: status==='done' ? 'เสร็จแล้ว' : status==='in_progress' ? 'กำลังทำ' : 'ร่าง', on: status==='done' },
+              ].map((s,i,arr) => (
+                <div key={i} style={{ display:'flex', gap:12 }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+                    <div style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0,
+                      background: s.on ? 'rgba(108,99,255,0.12)' : 'rgba(200,210,240,0.2)', border:'1.5px solid ' + (s.on ? 'rgba(108,99,255,0.35)' : 'rgba(200,210,240,0.5)') }}>{s.icon}</div>
+                    {i < arr.length-1 && <div style={{ width:2, flex:1, minHeight:14, background:'rgba(108,99,255,0.15)' }}/>}
+                  </div>
+                  <div style={{ paddingBottom:14 }}>
+                    <div style={{ fontSize:10.5, fontWeight:700, color:'#9ca3af' }}>{s.label}</div>
+                    <div style={{ fontSize:13, fontWeight:600, color: s.on ? '#1a1a2e' : '#9ca3af', marginTop:1 }}>{s.value}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

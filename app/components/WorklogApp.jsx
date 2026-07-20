@@ -7,6 +7,7 @@ import CalendarPage from './CalendarPage'
 import AIAssistantPage from './AIAssistantPage'
 import SmartProductivityPanel from './SmartProductivityPanel'
 import SmartWorklogWorkspace from './SmartWorklogWorkspace'
+import { downloadArtworkPDF, downloadArtworkExcel } from './ArtworkExport'
 import PresentationStudio from './PresentationStudio'
 import MobileNav from './MobileNav'
 import ProfilePage from './ProfilePage'
@@ -1217,6 +1218,21 @@ function LogForm({ initial, onSave, onCancel }) {
   const addAw = () => set("artworks", [...aws, { title:"", type:"banner", status:"pending" }])
   const setAw = (i,k,v) => set("artworks", aws.map((a,j)=> j===i ? {...a,[k]:v} : a))
   const removeAw = i => set("artworks", aws.filter((_,j)=>j!==i))
+  const awFileRef = useRef()
+  const [awUploadIdx, setAwUploadIdx] = useState(null)
+  async function handleAwFile(files){
+    const file = Array.from(files)[0]; const i = awUploadIdx
+    if (!file || i==null) return
+    try {
+      const path = 'artworks/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+      const { error } = await supabase.storage.from('worklog-gallery').upload(path, file, { cacheControl:'3600', upsert:false })
+      if (!error) {
+        const { data } = supabase.storage.from('worklog-gallery').getPublicUrl(path)
+        setForm(f => ({ ...f, artworks: (f.artworks||[]).map((a,j)=> j===i ? { ...a, thumbnail:data.publicUrl, file_url:data.publicUrl } : a) }))
+      }
+    } catch {}
+    setAwUploadIdx(null)
+  }
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -1303,6 +1319,11 @@ function LogForm({ initial, onSave, onCancel }) {
           {aws.map((a,i)=>(
             <div key={i} style={{display:"flex",gap:6,alignItems:"center",background:"rgba(108,99,255,0.045)",border:"1px solid rgba(108,99,255,0.14)",borderRadius:12,padding:"8px 10px",flexWrap:isMobile?"wrap":"nowrap"}}>
               <span style={{fontSize:11,fontWeight:800,color:"#6C63FF",flexShrink:0,width:22,textAlign:"center"}}>#{i+1}</span>
+              {a.thumbnail
+                ? <img src={a.thumbnail} alt="" onClick={()=>{setAwUploadIdx(i);awFileRef.current?.click()}}
+                    style={{width:30,height:30,borderRadius:8,objectFit:"cover",flexShrink:0,cursor:"pointer",border:"1px solid rgba(108,99,255,0.25)"}}/>
+                : <button onClick={()=>{setAwUploadIdx(i);awFileRef.current?.click()}} title="แนบรูป Preview"
+                    style={{width:30,height:30,borderRadius:8,border:"1.5px dashed rgba(108,99,255,0.35)",background:"rgba(108,99,255,0.04)",color:"#6C63FF",fontSize:12,cursor:"pointer",flexShrink:0}}>📎</button>}
               <input className="input" placeholder="ชื่อชิ้นงาน เช่น Facebook Cover" value={a.title}
                 onChange={e=>setAw(i,"title",e.target.value)} style={{flex:isMobile?"1 1 100%":2,minWidth:120,padding:"7px 10px",fontSize:13}}/>
               <select className="input" value={a.type} onChange={e=>setAw(i,"type",e.target.value)} style={{flex:1,minWidth:104,padding:"7px 8px",fontSize:12.5}}>
@@ -1322,6 +1343,8 @@ function LogForm({ initial, onSave, onCancel }) {
           </button>
         </div>
         {aws.length===0 && <div style={{fontSize:11,color:"var(--text3)",marginTop:6}}>ไม่เพิ่มก็ได้ — งานที่ไม่มีชิ้นงานจะนับเป็น 1 ชิ้นอัตโนมัติ</div>}
+        <input ref={awFileRef} type="file" accept="image/*" style={{display:"none"}}
+          onChange={e=>{handleAwFile(e.target.files); e.target.value=""}}/>
       </div>
 
       <div style={{marginBottom:14}}>
@@ -1737,7 +1760,9 @@ function LogCard({log, onEdit, onDelete, onStatusChange}){
                   const t=getAwType(a.type), s=AW_STATUS[a.status]||AW_STATUS.pending
                   return (
                     <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,background:"rgba(108,99,255,0.04)",borderRadius:8,padding:"5px 9px"}}>
-                      <span style={{flexShrink:0}}>{t.icon}</span>
+                      {a.thumbnail
+                        ? <img src={a.thumbnail} alt="" style={{width:26,height:26,borderRadius:6,objectFit:"cover",flexShrink:0}}/>
+                        : <span style={{flexShrink:0}}>{t.icon}</span>}
                       <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text)"}}>{a.title}</span>
                       <span style={{fontSize:10,color:"var(--text3)",flexShrink:0}}>{t.label}</span>
                       <span style={{fontSize:10,fontWeight:700,color:s.color,flexShrink:0}}>{s.label}</span>
@@ -1785,6 +1810,8 @@ function LogCard({log, onEdit, onDelete, onStatusChange}){
 function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
   const [catFilter, setCatFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [awTypeFilter, setAwTypeFilter] = useState("all")
+  const [search, setSearch] = useState("")
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(()=>{
@@ -1793,9 +1820,17 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
     return()=>window.removeEventListener("resize",check)
   },[])
 
+  const q = search.trim().toLowerCase()
   const filtered = logs.filter(l=>{
     if(catFilter!=="all" && l.category!==catFilter) return false
     if(statusFilter!=="all" && l.status!==statusFilter) return false
+    if(awTypeFilter!=="all" && !(l.artworks||[]).some(a=>a.type===awTypeFilter)) return false
+    if(q){
+      const inTask = (l.title||'').toLowerCase().includes(q) || (l.description||'').toLowerCase().includes(q)
+      const inTags = (l.tags||[]).some(t=>String(t).toLowerCase().includes(q))
+      const inAw   = (l.artworks||[]).some(a=>(a.title||'').toLowerCase().includes(q) || getAwType(a.type).label.toLowerCase().includes(q))
+      if(!inTask && !inTags && !inAw) return false
+    }
     return true
   })
 
@@ -1815,6 +1850,24 @@ function LogsPage({logs, onEdit, onDelete, onAdd, onStatusChange}){
           <div style={{fontSize:12,color:"var(--text3)"}}>ทั้งหมด {logs.length} งาน</div>
         </div>
         <button onClick={onAdd} className="btn btn-primary btn-sm">+ เพิ่มงาน</button>
+      </div>
+
+      {/* Search + artwork-type filter */}
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,minWidth:200}}>
+          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"var(--text3)"}}>🔍</span>
+          <input className="input" placeholder="ค้นหางาน · ชิ้นงาน · แท็ก..." value={search}
+            onChange={e=>setSearch(e.target.value)}
+            style={{paddingLeft:34,width:"100%",boxSizing:"border-box"}}/>
+          {search && <button onClick={()=>setSearch("")}
+            style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:13}}>×</button>}
+        </div>
+        <select className="input" value={awTypeFilter} onChange={e=>setAwTypeFilter(e.target.value)}
+          style={{width:"auto",minWidth:150,fontWeight:600,color:awTypeFilter!=="all"?"#6C63FF":undefined}}>
+          <option value="all">🖼️ ทุกประเภทชิ้นงาน</option>
+          {ARTWORK_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+        </select>
+        {(q||awTypeFilter!=="all") && <span style={{fontSize:11.5,color:"var(--text3)"}}>พบ {filtered.length} งาน</span>}
       </div>
 
       {/* Status filter tabs */}
@@ -2289,10 +2342,10 @@ export default function App(){
     try {
       if (removed.length) await supabase.from('artworks').delete().in('id', removed)
       for (const a of keep)
-        await supabase.from('artworks').update({ title:a.title.trim(), type:a.type||'other', status:a.status||'pending' }).eq('id', a.id)
+        await supabase.from('artworks').update({ title:a.title.trim(), type:a.type||'other', status:a.status||'pending', thumbnail:a.thumbnail||null, file_url:a.file_url||null }).eq('id', a.id)
       if (add.length) {
         const { data } = await supabase.from('artworks').insert(add.map(a=>({
-          task_id:String(taskId), user_id:uid, title:a.title.trim(), type:a.type||'other', status:a.status||'pending',
+          task_id:String(taskId), user_id:uid, title:a.title.trim(), type:a.type||'other', status:a.status||'pending', thumbnail:a.thumbnail||null, file_url:a.file_url||null,
         }))).select()
         return [...keep, ...(data||[])]
       }
@@ -2562,6 +2615,18 @@ export default function App(){
           >
             📥 Download PDF
           </button>
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:600,color:"var(--text)",marginBottom:4}}>🖼️ Artwork Report</div>
+            <div style={{fontSize:12,color:"var(--text3)"}}>งาน + ชิ้นงานทั้งหมด · จำนวนต่อประเภท · สถานะ · รูป Preview</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={async()=>{ try{ await downloadArtworkPDF(logs) }catch(e){ showT('⚠️ Export PDF ไม่สำเร็จ') } }} className="btn btn-primary">📄 PDF</button>
+            <button onClick={async()=>{ try{ await downloadArtworkExcel(logs) }catch(e){ showT('⚠️ Export Excel ไม่สำเร็จ') } }} className="btn btn-ghost">📊 Excel</button>
+          </div>
         </div>
       </div>
     </div>

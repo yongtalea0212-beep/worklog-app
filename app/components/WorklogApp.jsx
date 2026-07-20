@@ -941,6 +941,52 @@ const SAMPLE = [
 ]
 const HOURS_OPT = [0.5,1,1.5,2,3,4,5,6,8]
 
+// ── Artwork (ชิ้นงาน) inside a task ──
+const ARTWORK_TYPES = [
+  { id:'banner',   label:'Banner',   icon:'🖼️' },
+  { id:'poster',   label:'Poster',   icon:'📃' },
+  { id:'logo',     label:'Logo',     icon:'✳️' },
+  { id:'video',    label:'Video',    icon:'🎬' },
+  { id:'facebook', label:'Facebook', icon:'📘' },
+  { id:'motion',   label:'Motion',   icon:'🌀' },
+  { id:'brochure', label:'Brochure', icon:'📑' },
+  { id:'website',  label:'Website',  icon:'🌐' },
+  { id:'ui',       label:'UI',       icon:'📱' },
+  { id:'mockup',   label:'Mockup',   icon:'🧊' },
+  { id:'other',    label:'อื่นๆ',    icon:'📌' },
+]
+const getAwType = id => ARTWORK_TYPES.find(t=>t.id===id) || ARTWORK_TYPES[ARTWORK_TYPES.length-1]
+const AW_STATUS = {
+  pending: { label:'📝 รอเริ่ม',  color:'#9ca3af' },
+  doing:   { label:'⏳ กำลังทำ', color:'#F59E0B' },
+  done:    { label:'✅ เสร็จ',    color:'#10B981' },
+}
+
+// Artwork KPI across logs. Backward compatible: a task with no artwork rows
+// counts as 1 piece (its own status maps done / in_progress→doing / else pending).
+function getArtworkStats(logs){
+  let total=0, done=0, doing=0, pending=0
+  const byType={}
+  let topTask=null
+  logs.forEach(l=>{
+    const list=l.artworks||[]
+    if(list.length===0){
+      total+=1
+      if(l.status==='done') done+=1; else if(l.status==='in_progress') doing+=1; else pending+=1
+    } else {
+      total+=list.length
+      list.forEach(a=>{
+        byType[a.type||'other']=(byType[a.type||'other']||0)+1
+        if(a.status==='done') done+=1; else if(a.status==='doing') doing+=1; else pending+=1
+      })
+      if(!topTask || list.length>topTask.count) topTask={ title:l.title, count:list.length }
+    }
+  })
+  const avg = logs.length ? Math.round(total/logs.length*10)/10 : 0
+  const topTypes = Object.entries(byType).map(([id,count])=>({ ...getAwType(id), count })).sort((a,b)=>b.count-a.count)
+  return { total, done, doing, pending, avg, topTypes, topTask }
+}
+
 const CMD_ITEMS = [
   { icon:"➕", bg:"rgba(108,99,255,0.15)", name:"เพิ่มงานใหม่",     desc:"บันทึกงานที่ทำวันนี้",  action:"add" },
   { icon:"✨", bg:"rgba(139,92,246,0.15)", name:"สร้างรายงาน AI",   desc:"สรุปผลงานรายเดือน",    action:"report" },
@@ -1114,10 +1160,10 @@ function LogForm({ initial, onSave, onCancel }) {
     window.addEventListener('resize',check)
     return()=>window.removeEventListener('resize',check)
   },[])
-  const [form, setForm] = useState(initial || {
+  const [form, setForm] = useState(initial ? { artworks:[], ...initial } : {
     title:"", description:"", category:"graphic",
     hours:2, status:"done", tags:[], date:today(),
-    imageUrls:[], imageCount:0,
+    imageUrls:[], imageCount:0, artworks:[],
   })
   const labelStyle = {
   display:'block', fontSize:10, fontWeight:700,
@@ -1165,6 +1211,12 @@ function LogForm({ initial, onSave, onCancel }) {
     if (t && !form.tags.includes(t)) set("tags",[...form.tags,t])
     setTagInput("")
   }
+
+  // ── Artwork rows (ชิ้นงาน) ──
+  const aws = form.artworks || []
+  const addAw = () => set("artworks", [...aws, { title:"", type:"banner", status:"pending" }])
+  const setAw = (i,k,v) => set("artworks", aws.map((a,j)=> j===i ? {...a,[k]:v} : a))
+  const removeAw = i => set("artworks", aws.filter((_,j)=>j!==i))
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -1242,6 +1294,34 @@ function LogForm({ initial, onSave, onCancel }) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Artwork (ชิ้นงาน) — 1 task : N pieces */}
+      <div style={{marginBottom:14}}>
+        <label style={labelStyle}>🖼️ ชิ้นงาน (Artwork){aws.length>0 ? ` · ${aws.length} ชิ้น` : ''}</label>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {aws.map((a,i)=>(
+            <div key={i} style={{display:"flex",gap:6,alignItems:"center",background:"rgba(108,99,255,0.045)",border:"1px solid rgba(108,99,255,0.14)",borderRadius:12,padding:"8px 10px",flexWrap:isMobile?"wrap":"nowrap"}}>
+              <span style={{fontSize:11,fontWeight:800,color:"#6C63FF",flexShrink:0,width:22,textAlign:"center"}}>#{i+1}</span>
+              <input className="input" placeholder="ชื่อชิ้นงาน เช่น Facebook Cover" value={a.title}
+                onChange={e=>setAw(i,"title",e.target.value)} style={{flex:isMobile?"1 1 100%":2,minWidth:120,padding:"7px 10px",fontSize:13}}/>
+              <select className="input" value={a.type} onChange={e=>setAw(i,"type",e.target.value)} style={{flex:1,minWidth:104,padding:"7px 8px",fontSize:12.5}}>
+                {ARTWORK_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+              </select>
+              <select className="input" value={a.status} onChange={e=>setAw(i,"status",e.target.value)}
+                style={{flex:1,minWidth:96,padding:"7px 8px",fontSize:12.5,color:AW_STATUS[a.status]?.color,fontWeight:600}}>
+                {Object.entries(AW_STATUS).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}
+              </select>
+              <button onClick={()=>removeAw(i)} title="ลบชิ้นงาน"
+                style={{width:26,height:26,borderRadius:8,border:"none",background:"rgba(239,68,68,0.09)",color:"#EF4444",fontSize:13,cursor:"pointer",flexShrink:0}}>×</button>
+            </div>
+          ))}
+          <button onClick={addAw}
+            style={{padding:"9px 14px",borderRadius:12,border:"1.5px dashed rgba(108,99,255,0.4)",background:"rgba(108,99,255,0.04)",color:"#6C63FF",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+            + เพิ่มชิ้นงาน
+          </button>
+        </div>
+        {aws.length===0 && <div style={{fontSize:11,color:"var(--text3)",marginTop:6}}>ไม่เพิ่มก็ได้ — งานที่ไม่มีชิ้นงานจะนับเป็น 1 ชิ้นอัตโนมัติ</div>}
       </div>
 
       <div style={{marginBottom:14}}>
@@ -1339,6 +1419,7 @@ function DashboardPage({logs,onAdd,onReport}){
     return()=>window.removeEventListener('resize',check)
   },[])
   const stats=getStats(logs)
+  const aw=getArtworkStats(logs)
   const weeklyData=getWeeklyData(logs)
   const trendData=getTrendData(logs)
   const pieData=Object.entries(stats.byCategory).map(([id,value])=>({id,value,color:getCat(id).color}))
@@ -1349,7 +1430,7 @@ function DashboardPage({logs,onAdd,onReport}){
 
   async function getInsight(){
     setAiLoading(true)
-    const text=await callAI(`คุณเป็น AI Coach วิเคราะห์สั้นๆ 3 bullet points ภาษาไทย:\nงาน ${stats.total} ชิ้น ${stats.hours} ชม.\nหมวดหลัก: ${stats.topCat?.label||'ไม่มีข้อมูล'}\nอย่าใช้ markdown ขึ้นต้น • แต่ละข้อ`)
+    const text=await callAI(`คุณเป็น AI Coach วิเคราะห์สั้นๆ 3 bullet points ภาษาไทย:\nงาน ${stats.total} งาน รวม ${aw.total} ชิ้นงาน (เฉลี่ย ${aw.avg} ชิ้น/งาน) ${stats.hours} ชม.\nชิ้นงานเสร็จ ${aw.done} กำลังทำ ${aw.doing} รอเริ่ม ${aw.pending}\nประเภทชิ้นงานยอดนิยม: ${aw.topTypes.slice(0,3).map(t=>t.label+' '+t.count).join(', ')||'ไม่มีข้อมูล'}\nหมวดหลัก: ${stats.topCat?.label||'ไม่มีข้อมูล'}\nอย่าใช้ markdown ขึ้นต้น • แต่ละข้อ`)
     setAiInsight(text)
     setAiLoading(false)
   }
@@ -1372,7 +1453,7 @@ function DashboardPage({logs,onAdd,onReport}){
             <div style={{fontSize:13,color:"var(--text2)",marginBottom:4}}>{greeting}</div>
             <div className="hero-title">สวัสดีครับ 👋</div>
             <div className="hero-sub">
-              คุณบันทึก <strong style={{color:"var(--accent)"}}>{stats.total} งาน</strong> เดือนนี้ · รวม <strong style={{color:"var(--accent2)"}}>{stats.hours} ชั่วโมง</strong>
+              คุณบันทึก <strong style={{color:"var(--accent)"}}>{stats.total} งาน</strong> · <strong style={{color:"#EC4899"}}>{aw.total} ชิ้นงาน</strong> เดือนนี้ · รวม <strong style={{color:"var(--accent2)"}}>{stats.hours} ชั่วโมง</strong>
             </div>
             <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>
               <div className="streak-pill">🔥 7 Day Streak</div>
@@ -1403,6 +1484,45 @@ function DashboardPage({logs,onAdd,onReport}){
             <div className="kpi-bar" style={{background:`linear-gradient(90deg,${k.color}60,transparent)`}}/>
           </div>
         ))}
+      </div>
+
+      {/* Artwork (ชิ้นงาน) mini dashboard */}
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12}}>
+          <div className="card-t" style={{marginBottom:0}}>🖼️ ชิ้นงาน (Artwork)</div>
+          <div style={{fontSize:11,color:"var(--text3)"}}>เฉลี่ย {aw.avg} ชิ้น/งาน{aw.topTask ? ` · มากสุด: ${aw.topTask.title} (${aw.topTask.count})` : ''}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:aw.topTypes.length?14:0}}>
+          {[
+            {icon:"📁",label:"งานทั้งหมด",   value:stats.total, color:"#6C63FF"},
+            {icon:"🖼️",label:"ชิ้นงานทั้งหมด",value:aw.total,    color:"#EC4899"},
+            {icon:"🔥",label:"ทำเสร็จแล้ว",  value:aw.done,     color:"#10B981"},
+            {icon:"⏳",label:"กำลังทำ",      value:aw.doing,    color:"#F59E0B"},
+            {icon:"📝",label:"รอเริ่ม",      value:aw.pending,  color:"#9ca3af"},
+          ].map((w,i)=>(
+            <div key={i} style={{background:`${w.color}0D`,border:`1px solid ${w.color}26`,borderRadius:14,padding:"12px 10px",textAlign:"center"}}>
+              <div style={{fontSize:16,marginBottom:2}}>{w.icon}</div>
+              <div style={{fontSize:20,fontWeight:800,color:w.color}}><AnimatedNumber value={w.value}/></div>
+              <div style={{fontSize:10.5,color:"var(--text3)",fontWeight:600}}>{w.label}</div>
+            </div>
+          ))}
+        </div>
+        {aw.topTypes.length>0 && (
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:.5,marginBottom:8,textTransform:"uppercase"}}>Top ประเภทชิ้นงาน</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {aw.topTypes.slice(0,6).map(t=>(
+                <div key={t.id} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,width:90,flexShrink:0,color:"var(--text2)"}}>{t.icon} {t.label}</span>
+                  <div style={{flex:1,height:8,background:"rgba(108,99,255,0.08)",borderRadius:6,overflow:"hidden"}}>
+                    <div style={{width:`${Math.round(t.count/aw.topTypes[0].count*100)}%`,height:"100%",borderRadius:6,background:"linear-gradient(90deg,#6C63FF,#EC4899)"}}/>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:800,color:"#6C63FF",width:26,textAlign:"right"}}>{t.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Charts */}
@@ -1572,6 +1692,10 @@ function LogCard({log, onEdit, onDelete, onStatusChange}){
             <span style={{fontWeight:600,fontSize:14,color:"var(--text)"}}>{log.title}</span>
             <Badge category={log.category}/>
             <StatusBadge status={log.status}/>
+            {log.artworks?.length>0 &&
+              <span style={{fontSize:10,fontWeight:700,color:'#6C63FF',background:'rgba(108,99,255,0.1)',borderRadius:20,padding:'2px 8px'}}>
+                🖼️ {log.artworks.length} ชิ้น{log.artworks.filter(a=>a.status==='done').length>0 ? ` · เสร็จ ${log.artworks.filter(a=>a.status==='done').length}` : ''}
+              </span>}
             {log.dueDate && log.status!=='done' && (()=>{
               const days=Math.round((new Date(log.dueDate).setHours(0,0,0,0)-new Date().setHours(0,0,0,0))/86400000)
               const c=days<0?{c:'#991B1B',t:`เลย ${-days} ว.`}:days===0?{c:'#8B5CF6',t:'วันนี้'}:days<3?{c:'#EF4444',t:`อีก ${days} ว.`}:days<=7?{c:'#F59E0B',t:`อีก ${days} ว.`}:{c:'#10B981',t:`อีก ${days} ว.`}
@@ -1604,6 +1728,25 @@ function LogCard({log, onEdit, onDelete, onStatusChange}){
       {/* Expanded actions */}
       {exp&&(
         <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",paddingLeft:10}}>
+          {/* Artwork list (ชิ้นงาน) */}
+          {log.artworks?.length>0 && (
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",marginBottom:6,letterSpacing:.5}}>ชิ้นงาน ({log.artworks.length})</div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {log.artworks.map((a,i)=>{
+                  const t=getAwType(a.type), s=AW_STATUS[a.status]||AW_STATUS.pending
+                  return (
+                    <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,background:"rgba(108,99,255,0.04)",borderRadius:8,padding:"5px 9px"}}>
+                      <span style={{flexShrink:0}}>{t.icon}</span>
+                      <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text)"}}>{a.title}</span>
+                      <span style={{fontSize:10,color:"var(--text3)",flexShrink:0}}>{t.label}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:s.color,flexShrink:0}}>{s.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {/* Quick status change */}
           <div style={{marginBottom:10}}>
             <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",marginBottom:6,letterSpacing:.5}}>เปลี่ยนสถานะ</div>
@@ -2048,7 +2191,13 @@ export default function App(){
         const q=supabase.from('work_logs').select('*').order('date',{ascending:false})
         const{data,error}=await (lineId ? q.eq('line_user_id',lineId) : q.eq('user_id',uid))
         if(error) throw error
-        setLogs([...pending, ...(data||[]).map(rowToLog)])
+        // Attach artworks (ชิ้นงาน) to their tasks — non-fatal if table missing.
+        const byTask={}
+        try {
+          const{data:aws}=await supabase.from('artworks').select('*').eq('user_id',uid)
+          ;(aws||[]).forEach(a=>{ (byTask[a.task_id]=byTask[a.task_id]||[]).push(a) })
+        } catch {}
+        setLogs([...pending, ...(data||[]).map(r=>({ ...rowToLog(r), artworks: byTask[String(r.id)]||[] }))])
       } catch {
         // Offline / fetch failed → still show locally-queued work so the app stays usable.
         setLogs(pending)
@@ -2130,6 +2279,27 @@ export default function App(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
+  // Diff-sync artwork rows for a task: update kept rows, insert new, delete removed.
+  // Non-fatal — artwork sync failing never blocks the task save (online-only).
+  async function syncArtworks(taskId, uid, list, prevList){
+    const rows = (list||[]).filter(a=>(a.title||'').trim())
+    const keep = rows.filter(a=>a.id)
+    const add  = rows.filter(a=>!a.id)
+    const removed = (prevList||[]).filter(p=>p.id && !keep.find(k=>k.id===p.id)).map(p=>p.id)
+    try {
+      if (removed.length) await supabase.from('artworks').delete().in('id', removed)
+      for (const a of keep)
+        await supabase.from('artworks').update({ title:a.title.trim(), type:a.type||'other', status:a.status||'pending' }).eq('id', a.id)
+      if (add.length) {
+        const { data } = await supabase.from('artworks').insert(add.map(a=>({
+          task_id:String(taskId), user_id:uid, title:a.title.trim(), type:a.type||'other', status:a.status||'pending',
+        }))).select()
+        return [...keep, ...(data||[])]
+      }
+      return keep
+    } catch { return rows }
+  }
+
   async function handleSave(form) {
   // Images already resolved to URLs by the form; offline saves keep existing URLs.
   let finalImageUrls = form.imageUrls || []
@@ -2186,12 +2356,14 @@ export default function App(){
     if (isEdit) {
       const { error } = await supabase.from('work_logs').update(d).eq('id', editLog.id)
       if (error) throw error
-      setLogs(ls => ls.map(l => l.id === editLog.id ? { ...l, ...form, imageUrls: finalImageUrls } : l))
+      const aw = await syncArtworks(editLog.id, uid, form.artworks, editLog.artworks)
+      setLogs(ls => ls.map(l => l.id === editLog.id ? { ...l, ...form, imageUrls: finalImageUrls, artworks: aw } : l))
       showT('✓ แก้ไขงานแล้ว')
     } else {
       const { data, error } = await supabase.from('work_logs').insert(d).select()
       if (error || !data?.[0]) throw (error || new Error('insert failed'))
-      setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls }, ...ls])
+      const aw = await syncArtworks(data[0].id, uid, form.artworks, [])
+      setLogs(ls => [{ ...form, id: data[0].id, imageUrls: finalImageUrls, artworks: aw }, ...ls])
       showT('✓ บันทึกงานแล้ว')
     }
     setShowForm(false); setEditLog(null); setPage('logs')

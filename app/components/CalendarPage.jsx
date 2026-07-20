@@ -28,6 +28,18 @@ const CATS = [
 
 const getCat = id => CATS.find(c => c.id === id) || CATS[7]
 
+// Artwork (ชิ้นงาน) labels — mirrors WorklogApp's ARTWORK_TYPES/AW_STATUS
+const AW_TYPES = {
+  banner:'🖼️ Banner', poster:'📃 Poster', logo:'✳️ Logo', video:'🎬 Video',
+  facebook:'📘 Facebook', motion:'🌀 Motion', brochure:'📑 Brochure',
+  website:'🌐 Website', ui:'📱 UI', mockup:'🧊 Mockup', other:'📌 อื่นๆ',
+}
+const AW_ST = {
+  pending:{ t:'📝 รอเริ่ม', c:'#9ca3af' },
+  doing:  { t:'⏳ กำลังทำ', c:'#F59E0B' },
+  done:   { t:'✅ เสร็จ',   c:'#10B981' },
+}
+
 // Custom FullCalendar event body — a colored block with category icon + time +
 // title so every task is identifiable at a glance (month view especially).
 function renderEventContent(arg) {
@@ -307,6 +319,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
   const isScheduled = !!props.startAt
   const timeRange  = fmtTimeRange(props.startAt, props.endAt)
   const dl         = deadlineInfo(dueDate)
+  const artworks   = Array.isArray(props.artworks) ? props.artworks : []
 
   const patch = (p) => { if (id != null) onPatch?.(id, p) }
   function pickStatus(s)   { setStatus(s);   patch({ status: s }) }
@@ -320,7 +333,7 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
       date: date ? date.split('T')[0] : ymd(),
       imageUrls, imageCount: imageUrls.length,
       startAt: props.startAt || null, endAt: props.endAt || null,
-      dueDate: dueDate || null, priority,
+      dueDate: dueDate || null, priority, artworks,
     })
     onClose()
   }
@@ -455,6 +468,31 @@ function TaskSidebar({ event, onClose, onEdit, onDelete, onUnschedule, onPatch, 
             <div style={{ background:'rgba(255,255,255,0.55)', border:'1px solid rgba(200,210,240,0.4)', borderRadius:13, padding:'12px 14px', marginBottom:12 }}>
               <div style={{ fontSize:9, fontWeight:700, color:'#9ca3af', letterSpacing:1, marginBottom:5 }}>DESCRIPTION</div>
               <div style={{ fontSize:13, color:'#4a5568', lineHeight:1.7 }}>{description}</div>
+            </div>
+          )}
+
+          {/* Artwork list (ชิ้นงาน) */}
+          {artworks.length > 0 && (
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'#9ca3af', letterSpacing:.5, marginBottom:7, textTransform:'uppercase' }}>
+                🖼️ ชิ้นงาน ({artworks.filter(a=>a.status==='done').length}/{artworks.length})
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                {artworks.map((a,i) => {
+                  const s = AW_ST[a.status] || AW_ST.pending
+                  return (
+                    <div key={a.id||i} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(108,99,255,0.05)', border:'1px solid rgba(108,99,255,0.12)', borderRadius:10, padding:'6px 10px', fontSize:12.5 }}>
+                      <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#1a1a2e', fontWeight:500 }}>{a.title}</span>
+                      <span style={{ fontSize:10.5, color:'#9ca3af', flexShrink:0 }}>{AW_TYPES[a.type] || AW_TYPES.other}</span>
+                      <span style={{ fontSize:10.5, fontWeight:700, color:s.c, flexShrink:0 }}>{s.t}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* progress bar: done/total */}
+              <div style={{ marginTop:7, height:6, background:'rgba(108,99,255,0.08)', borderRadius:6, overflow:'hidden' }}>
+                <div style={{ width:`${Math.round(artworks.filter(a=>a.status==='done').length/artworks.length*100)}%`, height:'100%', background:'linear-gradient(90deg,#6C63FF,#EC4899)', borderRadius:6, transition:'width .3s' }}/>
+              </div>
             </div>
           )}
 
@@ -945,6 +983,7 @@ export default function CalendarPage({ logs, onAddLog, onEditLog, onDeleteLog, o
         endAt:       log.endAt || null,
         dueDate:     log.dueDate || null,
         priority:    log.priority || 'medium',
+        artworks:    Array.isArray(log.artworks) ? log.artworks : [],
       },
     }
   })
